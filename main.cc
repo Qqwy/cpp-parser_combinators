@@ -121,7 +121,7 @@ Parser<char> char_(char target) {
       input.get();
       return target;
     } else {
-      return ErrorMessage{std::string("char `") + target + "` not found"};
+      return ErrorMessage{&target};
     }
   };
 }
@@ -146,7 +146,27 @@ operator >>(Parser<A> p1, Parser<B> p2) {
   };
 }
 
-auto myparser = char_('x') >> char_('y') >> char_('z');
+template<typename A>
+Parser<A> operator| (Parser<A> lhs, Parser<A> rhs) {
+  return [=](std::istream &input) -> Result<A> {
+    Result<A> res1 = lhs(input);
+    if (res1) {
+      return res1;
+    }
+    Result<A> res2 = rhs(input);
+    if (res2) {
+      return res2;
+    }
+
+    // return ErrorMessage{"Expected one of the following but found neither: " + std::get<ErrorMessage>(res1) + std::get<ErrorMessage>(res2)};
+    return ErrorMessage{std::get<ErrorMessage>(res1).message + " or " + std::get<ErrorMessage>(res2).message};
+  };
+}
+
+auto myparser = char_('x') >> char_('y') >> char_('z')
+              | char_('a') >> char_('b') >> char_('c')
+              ;
+
 
 #include <iostream>
 int main() {
@@ -160,7 +180,7 @@ int main() {
 
   Result<std::tuple<char, char, char>> result = myparser(std::cin);
   if(!result) {
-    std::cout << "Syntax error: " << std::get<ErrorMessage>(result).message << '\n';
+    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
   } else {
     std::cout << "Parse success!";
   }
