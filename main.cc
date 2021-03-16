@@ -15,16 +15,17 @@ template<typename...As, typename ...Bs> std::tuple<As..., Bs...> wrap_in_tuple(s
 template<typename   A , typename ...Bs> std::tuple<A    , Bs...> wrap_in_tuple(A                 lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
 template<typename...As, typename     B> std::tuple<As..., B    > wrap_in_tuple(std::tuple<As...> lhs, B                 rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
 
-// #include <concepts>
-// template <class ContainerType>
-// concept HasValueType = requires (ContainerType ct) {
-//   { *ct.begin() } -> std::same_as<typename ContainerType::value_type>;
-// };
+
+/// Concept which requires the type to behave like a container
+/// The current implementation is not very nice;
+/// it would be better to require exactly the operations that tupleToContainer uses.
 #include <concepts>
 template <typename Type>
 concept HasValueType =
   requires(Type type)
   {
+    // { std::remove_reference_t<Type>() }; // require a default constructor
+    // { type.push_back(std::declval<std::remove_reference_t<Type>::value_type>()) }; // require it can pushback `Type` elements.
     { *type.begin() } -> std::same_as<typename std::remove_reference_t<Type>::value_type &>;
   };
 
@@ -129,6 +130,12 @@ template<typename T>
 struct Parser : public std::function<Result<T>(std::istream &)> {
   using std::function<Result<T>(std::istream &)>::function;
 };
+template<typename Container>
+Parser<Container> epsilon_() {
+  return [=](std::istream &) {
+    return Container();
+  };
+}
 
 template<typename T> Parser<T> action_(std::function<T()> fun) {
   return [=](std::istream &) {
@@ -164,9 +171,14 @@ Parser<std::string> string_(std::string const &target) {
   };
 }
 
-template<typename A, typename B> Parser<B> map(Parser<A> parser, std::function<B(Result<A>)> fun) {
-  return [=](std::istream &input) {
-    return fun(parser(input));
+template<typename A, typename B> Parser<B> map(Parser<A> parser, std::function<B(A)> fun) {
+  return [=](std::istream &input) -> Result<B> {
+    // return fun(parser(input));
+    Result<A> res = parser(input);
+    if(!res){
+      return std::get<ErrorMessage>(res);
+    }
+    return fun(res);
   };
 }
 
@@ -200,24 +212,44 @@ Parser<A> operator| (Parser<A> lhs, Parser<A> rhs) {
   };
 }
 
-auto myparser = char_('x') >> char_('y') >> char_('z')
-              | char_('a') >> char_('b') >> char_('c')
+// template<typename Container>
+// Parser<Container> many(Parser<typename Container::value_type> element_parser);
+
+// template<typename Container>
+// Parser<Container> some(Parser<typename Container::value_type> element_parser);
+
+// template<typename Container>
+// Parser<Container> many(Parser<typename Container::value_type> element_parser) {
+//   return some<Container>(element_parser) | epsilon_<Container>();
+// }
+
+// template<typename Container>
+// Parser<Container> some(Parser<typename Container::value_type> element_parser) {
+//   return map(element_parser, [](typename Container::value_type val){ return Container{}.push_back(val); }) >> many<Container>(element_parser);
+// }
+
+auto myparser = (char_('x') >> char_('y') >> char_('z')
+                 | char_('a') >> char_('b') >> char_('c'))
               // | string_("foo")
               ;
 
 auto parser2 = string_("foo") | string_("faa");
 
 
-struct Person {
+class Person {
   std::string d_first_name;
   std::string d_last_name;
 
-  Person(std::string const &first_name, std::string const &last_name)
+public:
+  Person(std::string first_name, std::string last_name)
     : d_first_name(first_name),
-      d_last_name(last_name) {};
+      d_last_name(last_name)
+  {};
 };
 
-auto parser3 = string_("john") >> string_("snow");
+Parser<Person> parser3 = string_("john") >> string_("snow");
+
+// Parser<std::string> parser4 = many<std::string>(char_('z'));
 
 #include <iostream>
 #include <vector>
@@ -235,7 +267,7 @@ int main() {
   if(!result) {
     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
   } else {
-    std::cout << "Parse success!\n";
+    std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
   }
 
   Result<std::string> result2 = parser2(std::cin);
