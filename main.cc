@@ -28,6 +28,11 @@ struct ErrorMessage {
 //   return std::tuple_cat(lhs, std::make_tuple(rhs));
 // }
 
+template<typename A, typename B>
+std::tuple<A, B> super_tuple_cat(A lhs, B rhs) {
+  return std::make_tuple(lhs, rhs);
+}
+
 template<typename...As, typename ...Bs>
 std::tuple<As..., Bs...> super_tuple_cat(std::tuple<As...> lhs, std::tuple<Bs...> rhs) {
   return std::tuple_cat(lhs, rhs);
@@ -42,14 +47,12 @@ std::tuple<As..., B> super_tuple_cat(std::tuple<As...> lhs, B rhs) {
   return std::tuple_cat(lhs, std::make_tuple(rhs));
 }
 
-template<typename A, typename B>
-std::tuple<A, B> super_tuple_cat(A lhs, B rhs) {
-  return std::make_tuple(lhs, rhs);
-}
 
 template<typename T>
 struct Result : public std::variant<T, ErrorMessage> {
   using std::variant<T, ErrorMessage>::variant;
+
+  typedef T value_type;
 
   operator bool() const {
     return !std::holds_alternative<ErrorMessage>(*this);
@@ -101,45 +104,49 @@ template<typename A> auto operator |(Result<A> lhs, Result<A> rhs) {
 // }
 
 
-// template<typename... Ts>
-// struct Parser : public std::function<Result<T...>(std::istream &)> {
-//   using std::function<Result<T...>(std::istream &)>::function;
-// };
+template<typename T>
+struct Parser : public std::function<Result<T>(std::istream &)> {
+  using std::function<Result<T>(std::istream &)>::function;
+};
 
-// template<typename T> Parser<T> action_(std::function<T()> fun) {
-//   return [=](std::istream &) {
-//     return fun();
-//   };
-// }
+template<typename T> Parser<T> action_(std::function<T()> fun) {
+  return [=](std::istream &) {
+    return fun();
+  };
+}
 
-// Parser<char> char_(char target) {
-//   return [=](std::istream &input) -> Result<char> {
-//     if(input.peek() == target) {
-//       input.get();
-//       return target;
-//     } else {
-//       return ErrorMessage{" not found"};
-//     }
-//   };
-// }
+Parser<char> char_(char target) {
+  return [=](std::istream &input) -> Result<char> {
+    if(input.peek() == target) {
+      input.get();
+      return target;
+    } else {
+      return ErrorMessage{std::string("char `") + target + "` not found"};
+    }
+  };
+}
 
-// template<typename A, typename B> Parser<B> map(Parser<A> parser, std::function<B(Result<A>)> fun) {
-//   return [=](std::istream &input) {
-//     return fun(parser(input));
-//   };
-// }
+template<typename A, typename B> Parser<B> map(Parser<A> parser, std::function<B(Result<A>)> fun) {
+  return [=](std::istream &input) {
+    return fun(parser(input));
+  };
+}
 
-// template<typename A, typename B> Parser<std::tuple<A, B>> operator>>(Parser<A> p1, Parser<B> p2) {
-//   return [=](std::istream &input) {
-//     Result<A> res1 = p1(input);
-//     if(!res1) {
-//       return res1;
-//     } else {
-//       Result<B> res2 = p2(input);
-//       return res1 + res2;
-//     }
-//   };
-// }
+template<typename A, typename B>
+Parser<typename decltype(Result<A>() + Result<B>())::value_type>
+operator >>(Parser<A> p1, Parser<B> p2) {
+  return [=](std::istream &input) -> decltype(Result<A>() + Result<B>()) {
+    Result<A> res1 = p1(input);
+    if(!res1) {
+      return std::get<ErrorMessage>(res1);
+    } else {
+      Result<B> res2 = p2(input);
+      return res1 + res2;
+    }
+  };
+}
+
+auto myparser = char_('x') >> char_('y') >> char_('z');
 
 #include <iostream>
 int main() {
@@ -150,4 +157,11 @@ int main() {
   Result<int> y = x;
   Result<std::string> bar = foo;
   int baz = y + bar;
+
+  Result<std::tuple<char, char, char>> result = myparser(std::cin);
+  if(!result) {
+    std::cout << "Syntax error: " << std::get<ErrorMessage>(result).message << '\n';
+  } else {
+    std::cout << "Parse success!";
+  }
 }
