@@ -15,13 +15,27 @@ template<typename...As, typename ...Bs> std::tuple<As..., Bs...> wrap_in_tuple(s
 template<typename   A , typename ...Bs> std::tuple<A    , Bs...> wrap_in_tuple(A                 lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
 template<typename...As, typename     B> std::tuple<As..., B    > wrap_in_tuple(std::tuple<As...> lhs, B                 rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
 
-#include <type_traits>
-template<typename U, typename... T>
-constexpr bool all_same(std::tuple<T...>) {
-  return (std::is_same_v<U, T> && ...);
-}
+// #include <concepts>
+// template <class ContainerType>
+// concept HasValueType = requires (ContainerType ct) {
+//   { *ct.begin() } -> std::same_as<typename ContainerType::value_type>;
+// };
+#include <concepts>
+template <typename Type>
+concept HasValueType =
+  requires(Type type)
+  {
+    { *type.begin() } -> std::same_as<typename std::remove_reference_t<Type>::value_type &>;
+  };
 
-template<size_t index = 0, typename Container, typename... Ts>
+
+/// Turns a tuple into a container.
+/// Obviously this function template only exists
+/// for tuples->containers where all of the tuples' containing types `Ts` are each convertible to the container's `value_type`.
+/// `Container` might e.g. be `std::vector` or a `std::string`, etc.
+///
+/// As example: `std::tuple<char, char, char>` might be turned into a `std::string`.
+template<size_t index = 0, HasValueType Container, typename... Ts>
 constexpr Container tupleToContainerHelper(Container &&container, std::tuple<Ts...> const &tup) {
   if constexpr (index == sizeof...(Ts)) {
     return container;
@@ -31,7 +45,7 @@ constexpr Container tupleToContainerHelper(Container &&container, std::tuple<Ts.
   }
 }
 
-template<typename Container, typename... Ts>
+template<HasValueType Container, typename... Ts>
 constexpr Container tupleToContainer(std::tuple<Ts...> const &tup) {
   return tupleToContainerHelper(Container{}, tup);
 }
@@ -62,38 +76,29 @@ struct Result : public std::variant<T, ErrorMessage> {
     }
   }
 
-  // template<typename ElemType, typename = std::enable_if<std::is_same_v<ElemType, std::tuple_element<0, T>>>, typename = std::enable_if<all_same(T)>
-  //   operator Result<std::initializer_list<ElemType>> () const {
-  //   if(*this) {
-  //     return std::make_from_tuple(std::get<T>(*this));
-  //   } else {
-  //     return std::get<ErrorMessage>(*this);
-  //   }
-  // }
-
-  /// Converts a tuple into a container, if possible
-  // template<template<typename ...> typename Container>
-  // operator Result<Container<std::tuple_element<0, T>>> () const {
-  //   if(*this) {
-  //     return std::make_from_tuple<Container<std::tuple_element<0, T>>>(std::get<T>(*this));
-  //   } else {
-  //     return std::get<ErrorMessage>(*this);
-  //   }
-  // }
-
-  // operator Result<std::initializer_list<std::tuple_element<0, T>>> () const {
-  //   if(*this) {
-  //     return std::make_from_tuple(std::get<T>(*this));
-  //   } else {
-  //     return std::get<ErrorMessage>(*this);
-  //   }
-  // }
-
-  template<typename Container>
+  /// Converts tuples where all elements have the same type
+  /// into a container (like a `std::vector` or a `std::string`)
+  // Note the extra template parameter, it constrains us to only container-like types.
+  // this is required to not conflict with the overload below
+  template<HasValueType Container, typename = typename Container::value_type>
   operator Result<Container> () const {
     if(*this){
-      // Container{std::make_from_tuple<std::initializer_list<typename std::tuple_element<0, T>::type>> (std::get<T>(*this))};
       return tupleToContainer<Container>(std::get<T>(*this));
+    } else {
+      return std::get<ErrorMessage>(*this);
+    }
+  }
+
+
+  /// Converts tuples
+  /// to a `ConstructableType`
+  /// iff it has a constructor matching each of the tuple's types.
+  template<typename ConstructableType>
+  requires(!HasValueType<ConstructableType>)
+  // operator Result<decltype(std::make_from_tuple<ConstructableType>(std::declval<T>()))> () const {
+  operator Result<ConstructableType> () const {
+    if(*this){
+      return std::make_from_tuple<ConstructableType>(std::get<T>(*this));
     } else {
       return std::get<ErrorMessage>(*this);
     }
@@ -144,10 +149,14 @@ Parser<char> char_(char target) {
 
 Parser<std::string> string_(std::string const &target) {
   return [=](std::istream &input) -> Result<std::string> {
-    for(char nextchar : target) {
-      if(input.peek() == nextchar) {
+    for(size_t index = 0; index < target.size(); ++index) {
+      if(input.peek() == target[index]) {
         input.get();
       } else {
+        // Restore input:
+        while(index--) {
+          input.unget();
+        }
         return ErrorMessage{target};
       }
     }
@@ -198,6 +207,18 @@ auto myparser = char_('x') >> char_('y') >> char_('z')
 
 auto parser2 = string_("foo") | string_("faa");
 
+
+struct Person {
+  std::string d_first_name;
+  std::string d_last_name;
+
+  Person(std::string const &first_name, std::string const &last_name)
+    : d_first_name(first_name),
+      d_last_name(last_name) {};
+};
+
+auto parser3 = string_("john") >> string_("snow");
+
 #include <iostream>
 #include <vector>
 int main() {
@@ -207,21 +228,27 @@ int main() {
   // AutoTuple res = AutoTuple<int>(x) + foo;
   Result<int> y = x;
   Result<std::string> bar = foo;
-  int baz = y + bar;
+  // int baz = y + bar;
 
   // Result<std::tuple<char, char, char>> result = myparser(std::cin);
   Result<std::string> result = myparser(std::cin);
   if(!result) {
     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
   } else {
-    std::cout << "Parse success!";
+    std::cout << "Parse success!\n";
   }
 
-  // Result<std::string> result2 = parser2(std::cin);
-  // if(!result2) {
-  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result2).message << '\n';
-  // } else {
-  //   std::cout << "Parse success!";
-  // }
+  Result<std::string> result2 = parser2(std::cin);
+  if(!result2) {
+    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result2).message << '\n';
+  } else {
+    std::cout << "Parse success!\n";
+  }
 
+  Result<Person> result3 = parser3(std::cin);
+  if(!result3) {
+    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result3).message << '\n';
+  } else {
+    std::cout << "Parse success!\n";
+  }
 }
