@@ -8,42 +8,22 @@ struct ErrorMessage {
   std::string message;
 };
 
-
-// // General template
-// template<typename... Ts>
-// struct AutoTuple : public std::tuple<Ts...> {
-//   using std::tuple<Ts...>::tuple;
-// };
-
-// // combining autotuples
-// template<typename... As, typename... Bs> AutoTuple<As..., Bs...> operator+(AutoTuple<As...> lhs, AutoTuple<Bs...> rhs) {
-//   return std::tuple_cat(lhs, rhs);
-// }
-
-// template<typename A, typename... Bs> AutoTuple<A, Bs...> operator+(A lhs, AutoTuple<Bs...> rhs) {
-//   return std::tuple_cat(std::make_tuple(lhs), rhs);
-// }
-
-// template<typename... As, typename B> AutoTuple<As..., B> operator+(AutoTuple<As...> lhs, B rhs) {
-//   return std::tuple_cat(lhs, std::make_tuple(rhs));
-// }
-
 template<typename A, typename B>
-std::tuple<A, B> super_tuple_cat(A lhs, B rhs) {
+std::tuple<A, B> wrap_in_tuple(A lhs, B rhs) {
   return std::make_tuple(lhs, rhs);
 }
 
 template<typename...As, typename ...Bs>
-std::tuple<As..., Bs...> super_tuple_cat(std::tuple<As...> lhs, std::tuple<Bs...> rhs) {
+std::tuple<As..., Bs...> wrap_in_tuple(std::tuple<As...> lhs, std::tuple<Bs...> rhs) {
   return std::tuple_cat(lhs, rhs);
 }
 template<typename A, typename ...Bs>
-std::tuple<A, Bs...> super_tuple_cat(A lhs, std::tuple<Bs...> rhs) {
+std::tuple<A, Bs...> wrap_in_tuple(A lhs, std::tuple<Bs...> rhs) {
   return std::tuple_cat(std::make_tuple(lhs), rhs);
 }
 
 template<typename... As, typename B>
-std::tuple<As..., B> super_tuple_cat(std::tuple<As...> lhs, B rhs) {
+std::tuple<As..., B> wrap_in_tuple(std::tuple<As...> lhs, B rhs) {
   return std::tuple_cat(lhs, std::make_tuple(rhs));
 }
 
@@ -59,7 +39,7 @@ struct Result : public std::variant<T, ErrorMessage> {
   }
 };
 
-template<typename A, typename B> auto operator +(Result<A> lhs, Result<B> rhs) -> Result<decltype(super_tuple_cat(std::get<A>(lhs), std::get<B>(rhs)))> {
+template<typename A, typename B> auto operator +(Result<A> lhs, Result<B> rhs) -> Result<decltype(wrap_in_tuple(std::get<A>(lhs), std::get<B>(rhs)))> {
   if(!lhs) {
     return std::get<ErrorMessage>(lhs);
   }
@@ -68,7 +48,7 @@ template<typename A, typename B> auto operator +(Result<A> lhs, Result<B> rhs) -
     return std::get<ErrorMessage>(rhs);
   }
 
-  return super_tuple_cat(std::get<A>(lhs), std::get<B>(rhs));
+  return wrap_in_tuple(std::get<A>(lhs), std::get<B>(rhs));
 };
 
 template<typename A> auto operator |(Result<A> lhs, Result<A> rhs) {
@@ -78,31 +58,6 @@ template<typename A> auto operator |(Result<A> lhs, Result<A> rhs) {
 
   return rhs;
 }
-
-// template<typename ...As, typename B> Result<std::tuple<As..., B>> operator+(Result<std::tuple<As...> lhs, Result<B> rhs) {
-//   if(!lhs) {
-//     return lhs;
-//   }
-
-//   if(!rhs) {
-//     return rhs;
-//   }
-
-//   return std::make_tuple(std::get<std::tuple<As...>>(lhs), std::get<B>(rhs));
-// }
-
-// template<typename A, typename ...Bs> Result<std::tuple<A, Bs...>> operator+(Result<std::tuple<As...> lhs, Result<B> rhs) {
-//   if(!lhs) {
-//     return lhs;
-//   }
-
-//   if(!rhs) {
-//     return rhs;
-//   }
-
-//   return std::make_tuple(std::get<std::tuple<As...>>(lhs), std::get<B>(rhs));
-// }
-
 
 template<typename T>
 struct Parser : public std::function<Result<T>(std::istream &)> {
@@ -123,6 +78,19 @@ Parser<char> char_(char target) {
     } else {
       return ErrorMessage{&target};
     }
+  };
+}
+
+Parser<std::string> string_(std::string const &target) {
+  return [=](std::istream &input) -> Result<std::string> {
+    for(char nextchar : target) {
+      if(input.peek() == nextchar) {
+        input.get();
+      } else {
+        return ErrorMessage{target};
+      }
+    }
+    return target;
   };
 }
 
@@ -158,15 +126,16 @@ Parser<A> operator| (Parser<A> lhs, Parser<A> rhs) {
       return res2;
     }
 
-    // return ErrorMessage{"Expected one of the following but found neither: " + std::get<ErrorMessage>(res1) + std::get<ErrorMessage>(res2)};
     return ErrorMessage{std::get<ErrorMessage>(res1).message + " or " + std::get<ErrorMessage>(res2).message};
   };
 }
 
 auto myparser = char_('x') >> char_('y') >> char_('z')
               | char_('a') >> char_('b') >> char_('c')
+              // | string_("foo")
               ;
 
+auto parser2 = string_("foo") | string_("bar");
 
 #include <iostream>
 int main() {
@@ -178,10 +147,18 @@ int main() {
   Result<std::string> bar = foo;
   int baz = y + bar;
 
-  Result<std::tuple<char, char, char>> result = myparser(std::cin);
-  if(!result) {
-    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
+  // Result<std::tuple<char, char, char>> result = myparser(std::cin);
+  // if(!result) {
+  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
+  // } else {
+  //   std::cout << "Parse success!";
+  // }
+
+  Result<std::string> result2 = parser2(std::cin);
+  if(!result2) {
+    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result2).message << '\n';
   } else {
     std::cout << "Parse success!";
   }
+
 }
