@@ -182,6 +182,16 @@ template<typename A, typename B> Parser<B> map(Parser<A> parser, std::function<B
   };
 }
 
+template<typename F, typename Tuple> auto myapply(Parser<Tuple> const &parser, F fun) {
+  return [=](std::istream &input) -> Result<decltype(std::apply(fun, std::declval<Tuple>()))> {
+    auto res = parser(input);
+    if(!res) {
+      return std::get<ErrorMessage>(res);
+    }
+    return std::apply(fun, std::get<Tuple>(res));
+  };
+}
+
 template<typename A, typename B>
 Parser<typename decltype(Result<A>() + Result<B>())::value_type>
 operator >>(Parser<A> p1, Parser<B> p2) {
@@ -225,7 +235,22 @@ Parser<A> operator| (Parser<A> lhs, Parser<A> rhs) {
 
 // template<typename Container>
 // Parser<Container> some(Parser<typename Container::value_type> element_parser) {
-//   return map(element_parser, [](typename Container::value_type val){ return Container{}.push_back(val); }) >> many<Container>(element_parser);
+//   Parser<std::tuple<typename Container::value_type, Container>> combined_parser = element_parser >> many<Container>(element_parser);
+//   return apply(combined_parser, [](auto res){
+//     auto [element_res, many_res] = res;
+//     if(!element_res) {
+//       return std::get<ErrorMessage>(element_res);
+//     }
+//     if(!many_res) {
+//       return std::get<ErrorMessage>(element_res);
+//     }
+//     Container many_container = std::get<Container>(many_res);
+
+//     Container final_result{};
+//     final_result.push_back(std::get<typename Container::value_type>(element_res));
+//     final_result.insert(final_result.end(), many_container.begin(), many_container.end());
+//     return final_result;
+//   });
 // }
 
 auto myparser = (char_('x') >> char_('y') >> char_('z')
@@ -249,7 +274,11 @@ public:
 
 Parser<Person> parser3 = string_("john") >> string_("snow");
 
-// Parser<std::string> parser4 = many<std::string>(char_('z'));
+// Parser<std::vector<char>> parser4 = some<std::vector<char>>(char_('z'));
+
+auto parser5 = myapply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) -> char {
+  return lhs;
+ });
 
 #include <iostream>
 #include <vector>
