@@ -15,40 +15,10 @@ template<typename...As, typename ...Bs> std::tuple<As..., Bs...> wrap_in_tuple(s
 template<typename   A , typename ...Bs> std::tuple<A    , Bs...> wrap_in_tuple(A                 lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
 template<typename...As, typename     B> std::tuple<As..., B    > wrap_in_tuple(std::tuple<As...> lhs, B                 rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
 
-
-/// Concept which requires the type to behave like a container
-/// The current implementation is not very nice;
-/// it would be better to require exactly the operations that tupleToContainer uses.
-#include <concepts>
-template <typename Type>
-concept HasValueType =
-  requires(Type type)
-  {
-    // { std::remove_reference_t<Type>() }; // require a default constructor
-    // { type.push_back(std::declval<std::remove_reference_t<Type>::value_type>()) }; // require it can pushback `Type` elements.
-    { *type.begin() } -> std::same_as<typename std::remove_reference_t<Type>::value_type &>;
-  };
-
-
-/// Turns a tuple into a container.
-/// Obviously this function template only exists
-/// for tuples->containers where all of the tuples' containing types `Ts` are each convertible to the container's `value_type`.
-/// `Container` might e.g. be `std::vector` or a `std::string`, etc.
-///
-/// As example: `std::tuple<char, char, char>` might be turned into a `std::string`.
-template<size_t index = 0, HasValueType Container, typename... Ts>
-constexpr Container tupleToContainerHelper(Container &&container, std::tuple<Ts...> const &tup) {
-  if constexpr (index == sizeof...(Ts)) {
-    return container;
-  } else {
-    container.push_back(std::get<index>(tup));
-    return tupleToContainerHelper<index + 1>(container, tup);
-  }
-}
-
-template<HasValueType Container, typename... Ts>
-constexpr Container tupleToContainer(std::tuple<Ts...> const &tup) {
-  return tupleToContainerHelper(Container{}, tup);
+template <typename T, typename... Ts>
+T tuple_to_container(const std::tuple<Ts...>& t)
+{
+  return std::apply([](auto... cs){ return T{cs...}; }, t);
 }
 
 /// The result of parsing.
@@ -81,25 +51,10 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// into a container (like a `std::vector` or a `std::string`)
   // Note the extra template parameter, it constrains us to only container-like types.
   // this is required to not conflict with the overload below
-  template<HasValueType Container, typename = typename Container::value_type>
+  template<typename Container>
   operator Result<Container> () const {
     if(*this){
-      return tupleToContainer<Container>(std::get<T>(*this));
-    } else {
-      return std::get<ErrorMessage>(*this);
-    }
-  }
-
-
-  /// Converts tuples
-  /// to a `ConstructableType`
-  /// iff it has a constructor matching each of the tuple's types.
-  template<typename ConstructableType>
-  requires(!HasValueType<ConstructableType>)
-  // operator Result<decltype(std::make_from_tuple<ConstructableType>(std::declval<T>()))> () const {
-  operator Result<ConstructableType> () const {
-    if(*this){
-      return std::make_from_tuple<ConstructableType>(std::get<T>(*this));
+      return tuple_to_container<Container>(std::get<T>(*this));
     } else {
       return std::get<ErrorMessage>(*this);
     }
@@ -232,6 +187,7 @@ Parser<Container> some(Parser<typename Container::value_type> element_parser);
 template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser) {
   // Wrapping is necessary to make this 'lazy'.
+  // otherwise we'd stackoverflow on construction
   return [=](std::istream &input) {
     return (some<Container>(element_parser) | epsilon_<Container>())(input);
   };
@@ -240,22 +196,22 @@ Parser<Container> many(Parser<typename Container::value_type> element_parser) {
 #include <iostream>
 #include <vector>
 
+template<typename Container>
+Container prependElement(typename Container::value_type const &first, Container const &rest) {
+  Container result{};
+  result.push_back(first);
+  result.insert(result.end(), rest.begin(), rest.end());
+  return result;
+}
 
 template<typename Container>
 Parser<Container> some(Parser<typename Container::value_type> element_parser) {
-  Parser<std::tuple<typename Container::value_type, Container>> combined_parser = element_parser >> many<Container>(element_parser);
-  return myapply(combined_parser, [](typename Container::value_type element_res, Container many_res) {
-
-    Container final_result{};
-    final_result.push_back(element_res);
-    final_result.insert(final_result.end(), many_res.begin(), many_res.end());
-    return final_result;
-  });
+  auto combined_parser = element_parser >> many<Container>(element_parser);
+  return myapply(combined_parser, prependElement<Container>);
 }
 
-auto myparser =
-    char_('x') >> char_('y') >> char_('z')
-  | char_('a') >> char_('b') >> char_('c')
+auto myparser = char_('x') >> char_('y') >> char_('z')
+              | char_('a') >> char_('b') >> char_('c')
               ;
 
 auto parser2 = string_("foo") | string_("faa");
