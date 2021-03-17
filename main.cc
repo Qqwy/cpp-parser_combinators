@@ -55,11 +55,11 @@ struct Result : public std::variant<T, ErrorMessage> {
 };
 
 template<typename A, typename B> auto operator +(Result<A> const &lhs, Result<B> const &rhs) -> Result<decltype(wrapInTuple(std::get<A>(lhs), std::get<B>(rhs)))> {
-  if(!static_cast<bool>(lhs)) {
+  if(!bool(lhs)) {
     return std::get<ErrorMessage>(lhs);
   }
 
-  if(!static_cast<bool>(rhs)) {
+  if(!bool(rhs)) {
     return std::get<ErrorMessage>(rhs);
   }
 
@@ -67,7 +67,7 @@ template<typename A, typename B> auto operator +(Result<A> const &lhs, Result<B>
 };
 
 template<typename A> auto operator |(Result<A> const &lhs, Result<A> const &rhs) {
-  if(static_cast<bool>(lhs)) {
+  if(bool(lhs)) {
     return lhs;
   }
 
@@ -179,7 +179,7 @@ Parser<std::string> string_(std::string const &target) {
 template<typename F, typename A> auto map(Parser<A> const &parser, F &&fun) -> Parser<decltype(fun(std::declval<A>()))> {
   return [=](std::istream &input) -> Result<decltype(fun(std::declval<A>()))> {
     Result<A> res = parser(input);
-    if(!static_cast<bool>(res)) {
+    if(!bool(res)) {
       return std::get<ErrorMessage>(res);
     }
 
@@ -196,7 +196,7 @@ template<typename F, typename A> auto map(Parser<A> const &parser, F &&fun) -> P
 template<typename F, typename Tuple> auto mapApply(Parser<Tuple> const &parser, F &&fun) {
   return [=](std::istream &input) -> Result<decltype(std::apply(fun, std::declval<Tuple>()))> {
     auto res = parser(input);
-    if(!static_cast<bool>(res)) {
+    if(!bool(res)) {
       return std::get<ErrorMessage>(res);
     }
     return std::apply(fun, std::get<Tuple>(res));
@@ -210,7 +210,7 @@ Parser<typename decltype(Result<A>() + Result<B>())::value_type>
 operator >>(Parser<A> const &p1, Parser<B> const &p2) {
   return [=](std::istream &input) -> decltype(Result<A>() + Result<B>()) {
     Result<A> res1 = p1(input);
-    if(!static_cast<bool>(res1)) {
+    if(!bool(res1)) {
       return std::get<ErrorMessage>(res1);
     } else {
       Result<B> res2 = p2(input);
@@ -236,6 +236,11 @@ Parser<A> operator |(Parser<A> const &lhs, Parser<A> const &rhs) {
 
     return ErrorMessage{std::get<ErrorMessage>(res1).message + " or " + std::get<ErrorMessage>(res2).message};
   };
+}
+
+template<typename A>
+Parser<A> operator +(Parser<A> const &lhs, Parser<A> const &rhs) {
+  return mapApply(lhs >> rhs, std::plus());
 }
 
 /// Helper function for `many`/`some`.
@@ -350,13 +355,20 @@ Parser<size_t> uint_ = map(digits, [](std::string const &str){ return std::stoul
 // Parser<int> int_parser = map(maybe>(char_('-')) >> some<std::string>(digit), [](std::string const &str) { return std::atoi(str.c_str()); });
 
 Parser<std::string> maybe_sign = string_("+") | string_("-") | string_("");
-Parser<std::string> signed_digits = mapApply(maybe_sign >> digits, [](auto lhs, auto rhs) { return lhs + rhs; });
+Parser<std::string> signed_digits = maybe_sign + digits;
 Parser<long int> int_ = map(signed_digits, [](std::string const &str){ return std::stol(str.c_str()); });
+
+Parser<double> double_() {
+  auto vals = signed_digits + maybe(string_(".") + digits) + maybe(string_("e") + signed_digits);
+  return map(vals, [](std::string const &val) {
+    return std::atof(val.c_str());
+  });
+}
 
 template<typename T>
 Result<T> runParser(Parser<T> parser) {
   Result<T> result = parser(std::cin);
-  if(!static_cast<bool>(result)) {
+  if(!bool(result)) {
     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
   } else {
     // std::cout << "Parse success! " << '\n';
@@ -383,17 +395,17 @@ Result<T> runParser(Parser<T> parser) {
 
 
 
-template <>
-Result<std::string> runParser(Parser<std::string> parser) {
-  Result<std::string> result = parser(std::cin);
-  if(!result) {
-    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
-  } else {
-    std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
-  }
+// template <>
+// Result<std::string> runParser(Parser<std::string> parser) {
+//   Result<std::string> result = parser(std::cin);
+//   if(!result) {
+//     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
+//   } else {
+//     std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
+//   }
 
-  return result;
-}
+//   return result;
+// }
 
 int main() {
   std::cout << "Hello, world!\n";
@@ -408,7 +420,8 @@ int main() {
   runParser(parser3);
   // runParser(parser4);
   // runParser(parser5);
-  runParser(int_);
+  // runParser(int_);
+  runParser(double_());
 
   // Result<std::tuple<char, char, char>> result = myparser(std::cin);
   // Result<std::string> result = myparser(std::cin);
