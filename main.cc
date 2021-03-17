@@ -4,21 +4,24 @@
 #include <string>
 #include <istream>
 
+#include <iostream>
+#include <vector>
+
 struct ErrorMessage {
   std::string message;
 };
 
 /// Wrap `A` and `B` into a tuple.
 /// Overloaded to create a flat tuple even if `A` or `B` themselves are already tuples
-template<typename   A , typename    B > std::tuple<A    , B    > wrap_in_tuple(A                 lhs, B                 rhs) { return std::make_tuple(lhs, rhs); }
-template<typename...As, typename ...Bs> std::tuple<As..., Bs...> wrap_in_tuple(std::tuple<As...> lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(lhs, rhs);  }
-template<typename   A , typename ...Bs> std::tuple<A    , Bs...> wrap_in_tuple(A                 lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
-template<typename...As, typename     B> std::tuple<As..., B    > wrap_in_tuple(std::tuple<As...> lhs, B                 rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
+template<typename   A , typename    B > std::tuple<A    , B    > wrapInTuple(A                 lhs, B                 rhs) { return std::make_tuple(lhs, rhs); }
+template<typename...As, typename ...Bs> std::tuple<As..., Bs...> wrapInTuple(std::tuple<As...> lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(lhs, rhs);  }
+template<typename   A , typename ...Bs> std::tuple<A    , Bs...> wrapInTuple(A                 lhs, std::tuple<Bs...> rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
+template<typename...As, typename     B> std::tuple<As..., B    > wrapInTuple(std::tuple<As...> lhs, B                 rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
 
-template <typename T, typename... Ts>
-T tuple_to_container(const std::tuple<Ts...>& t)
+template <typename C, typename... Ts>
+C tupleToContainer(const std::tuple<Ts...>& t)
 {
-  return std::apply([](auto... cs){ return T{cs...}; }, t);
+  return std::apply([](auto... elements){ return C{elements...}; }, t);
 }
 
 /// The result of parsing.
@@ -37,31 +40,21 @@ struct Result : public std::variant<T, ErrorMessage> {
     return !std::holds_alternative<ErrorMessage>(*this);
   }
 
-  /// Converts a T into a Container<T> iff it is possible to construct this.
-  template<template<typename ...> typename Container>
-  operator Result<Container<T>>() const {
-    if(*this) {
-      return Container(std::get<T>(*this));
-    } else {
-      return std::get<ErrorMessage>(*this);
-    }
-  }
-
   /// Converts tuples where all elements have the same type
   /// into a container (like a `std::vector` or a `std::string`)
-  // Note the extra template parameter, it constrains us to only container-like types.
-  // this is required to not conflict with the overload below
-  template<typename Container>
-  operator Result<Container> () const {
+  /// or any other type
+  /// which can be constructed from the tuple's elements
+  template<typename C>
+  operator Result<C> () const {
     if(*this){
-      return tuple_to_container<Container>(std::get<T>(*this));
+      return tupleToContainer<C>(std::get<T>(*this));
     } else {
       return std::get<ErrorMessage>(*this);
     }
   }
 };
 
-template<typename A, typename B> auto operator +(Result<A> lhs, Result<B> rhs) -> Result<decltype(wrap_in_tuple(std::get<A>(lhs), std::get<B>(rhs)))> {
+template<typename A, typename B> auto operator +(Result<A> lhs, Result<B> rhs) -> Result<decltype(wrapInTuple(std::get<A>(lhs), std::get<B>(rhs)))> {
   if(!lhs) {
     return std::get<ErrorMessage>(lhs);
   }
@@ -70,7 +63,7 @@ template<typename A, typename B> auto operator +(Result<A> lhs, Result<B> rhs) -
     return std::get<ErrorMessage>(rhs);
   }
 
-  return wrap_in_tuple(std::get<A>(lhs), std::get<B>(rhs));
+  return wrapInTuple(std::get<A>(lhs), std::get<B>(rhs));
 };
 
 template<typename A> auto operator |(Result<A> lhs, Result<A> rhs) {
@@ -101,14 +94,29 @@ template<typename T> Parser<T> action_(std::function<T()> fun) {
 
 Parser<char> char_(char target) {
   return [=](std::istream &input) -> Result<char> {
-    if(input.peek() == target) {
-      input.get();
-      return target;
+    char val = input.get();
+    if(val == target) {
+      return val;
     } else {
+      input.unget();
       return ErrorMessage{std::string{1, target}};
     }
   };
 }
+
+Parser<char> satisfy(std::function<bool(char)> checking_fun, const char *name) {
+  return [=](std::istream &input) -> Result<char> {
+    char val = input.get();
+    if(checking_fun(val)) {
+      return val;
+    } else {
+      input.unget();
+      return ErrorMessage{std::string{"any char satifying `"} + name + '`'};
+    }
+  };
+}
+
+Parser<char> digit = satisfy(isdigit, "isdigit");
 
 Parser<std::string> string_(std::string const &target) {
   return [=](std::istream &input) -> Result<std::string> {
@@ -127,18 +135,18 @@ Parser<std::string> string_(std::string const &target) {
   };
 }
 
-template<typename A, typename B> Parser<B> map(Parser<A> parser, std::function<B(A)> fun) {
-  return [=](std::istream &input) -> Result<B> {
+template<typename F, typename A> auto map(Parser<A> parser, F fun) {
+  return [=](std::istream &input) -> Result<decltype(fun(std::declval<A>()))> {
     // return fun(parser(input));
     Result<A> res = parser(input);
     if(!res){
       return std::get<ErrorMessage>(res);
     }
-    return fun(res);
+    return fun(std::get<A>(res));
   };
 }
 
-template<typename F, typename Tuple> auto myapply(Parser<Tuple> const &parser, F fun) {
+template<typename F, typename Tuple> auto mapApply(Parser<Tuple> const &parser, F fun) {
   return [=](std::istream &input) -> Result<decltype(std::apply(fun, std::declval<Tuple>()))> {
     auto res = parser(input);
     if(!res) {
@@ -178,9 +186,16 @@ Parser<A> operator | (Parser<A> lhs, Parser<A> rhs) {
   };
 }
 
+/// Note that this needs to be defined as a macro,
+/// because we only want to evaluate the expression `parser`
+/// once called. (That's the whole point.)
+#define lazy(parser) [=](std::istream &input) { return (parser)(input); }
+
+/// Zero or more repetitions of `element_parser`.
 template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser);
 
+/// One or more repetitions of `element_parser`.
 template<typename Container>
 Parser<Container> some(Parser<typename Container::value_type> element_parser);
 
@@ -188,14 +203,12 @@ template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser) {
   // Wrapping is necessary to make this 'lazy'.
   // otherwise we'd stackoverflow on construction
-  return [=](std::istream &input) {
-    return (some<Container>(element_parser) | epsilon_<Container>())(input);
-  };
+  return lazy(some<Container>(element_parser) | epsilon_<Container>());
 }
 
-#include <iostream>
-#include <vector>
-
+/// Given a T `first` and a C<T> `rest`, creates a new C<T> with `first` at the front.
+/// This implementation is simple but inefficient.
+/// Optimizing it is left a an exercise to the reader ;-)
 template<typename Container>
 Container prependElement(typename Container::value_type const &first, Container const &rest) {
   Container result{};
@@ -206,8 +219,8 @@ Container prependElement(typename Container::value_type const &first, Container 
 
 template<typename Container>
 Parser<Container> some(Parser<typename Container::value_type> element_parser) {
-  auto combined_parser = element_parser >> many<Container>(element_parser);
-  return myapply(combined_parser, prependElement<Container>);
+  auto res = element_parser >> many<Container>(element_parser);
+  return mapApply(res, prependElement<Container>);
 }
 
 auto myparser = char_('x') >> char_('y') >> char_('z')
@@ -231,10 +244,17 @@ Parser<Person> parser3 = string_("john") >> string_("snow");
 
 Parser<std::string> parser4 = some<std::string>(char_('z'));
 
-Parser<std::string> parser5 = myapply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
+Parser<std::string> parser5 = mapApply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
   return lhs + rhs;
  });
 
+template<typename T>
+Parser<T> maybe(Parser<T> elem) {
+  return elem | epsilon_<T>();
+}
+
+Parser<size_t> uint_parser = map(some<std::string>(digit), [](std::string const &str) { return std::atoi(str.c_str()); });
+// Parser<int> int_parser = map(maybe>(char_('-')) >> some<std::string>(digit), [](std::string const &str) { return std::atoi(str.c_str()); });
 
 template<typename T>
 Result<T> runParser(Parser<T> parser) {
@@ -274,8 +294,9 @@ int main() {
   // runParser(myparser);
   // runParser(parser2);
   // runParser(parser3);
-  runParser(parser4);
+  // runParser(parser4);
   // runParser(parser5);
+  runParser(uint_parser);
 
   // Result<std::tuple<char, char, char>> result = myparser(std::cin);
   // Result<std::string> result = myparser(std::cin);
