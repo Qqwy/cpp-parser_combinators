@@ -79,17 +79,22 @@ struct Parser : public std::function<Result<T>(std::istream &)> {
   using std::function<Result<T>(std::istream &)>::function;
 };
 
-template<typename DefaultConstructible>
-Parser<DefaultConstructible> epsilon_() {
-  return [=](std::istream &) {
-    return DefaultConstructible{};
-  };
-}
+// template<typename DefaultConstructible>
+// Parser<DefaultConstructible> epsilon_() {
+//   return [=](std::istream &) {
+//     return DefaultConstructible{};
+//   };
+// }
 
-template<typename T> Parser<T> action_(std::function<T()> fun) {
+template<typename F> auto action_(F &&fun) {
   return [=](std::istream &) {
     return fun();
   };
+}
+
+template<typename DefaultConstructible>
+Parser<DefaultConstructible> epsilon_() {
+  return action_([]{ return DefaultConstructible{}; });
 }
 
 Parser<char> char_(char target) {
@@ -212,8 +217,13 @@ Parser<Container> many(Parser<typename Container::value_type> element_parser) {
 template<typename Container>
 Container prependElement(typename Container::value_type const &first, Container const &rest) {
   Container result{};
+  std::cout << "foo\n";
+  std::cout << first;
   result.push_back(first);
-  result.insert(result.end(), rest.begin(), rest.end());
+  // result.insert(result.end(), rest.begin(), rest.end());
+  for(auto &elem : rest) {
+    result.push_back(elem);
+  }
   return result;
 }
 
@@ -262,7 +272,7 @@ Result<T> runParser(Parser<T> parser) {
   if(!result) {
     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
   } else {
-    std::cout << "Parse success!\n";
+    std::cout << "Parse success! " << std::get<T>(result) << '\n';
   }
 
   return result;
@@ -295,8 +305,8 @@ int main() {
   // runParser(parser2);
   // runParser(parser3);
   // runParser(parser4);
-  // runParser(parser5);
-  runParser(uint_parser);
+  runParser(parser5);
+  // runParser(uint_parser);
 
   // Result<std::tuple<char, char, char>> result = myparser(std::cin);
   // Result<std::string> result = myparser(std::cin);
