@@ -130,10 +130,11 @@ template<typename T>
 struct Parser : public std::function<Result<T>(std::istream &)> {
   using std::function<Result<T>(std::istream &)>::function;
 };
-template<typename Container>
-Parser<Container> epsilon_() {
+
+template<typename DefaultConstructible>
+Parser<DefaultConstructible> epsilon_() {
   return [=](std::istream &) {
-    return Container();
+    return DefaultConstructible{};
   };
 }
 
@@ -149,7 +150,7 @@ Parser<char> char_(char target) {
       input.get();
       return target;
     } else {
-      return ErrorMessage{&target};
+      return ErrorMessage{std::string{1, target}};
     }
   };
 }
@@ -222,36 +223,28 @@ Parser<A> operator| (Parser<A> lhs, Parser<A> rhs) {
   };
 }
 
-// template<typename Container>
-// Parser<Container> many(Parser<typename Container::value_type> element_parser);
+template<typename Container>
+Parser<Container> many(Parser<typename Container::value_type> element_parser);
 
-// template<typename Container>
-// Parser<Container> some(Parser<typename Container::value_type> element_parser);
+template<typename Container>
+Parser<Container> some(Parser<typename Container::value_type> element_parser);
 
-// template<typename Container>
-// Parser<Container> many(Parser<typename Container::value_type> element_parser) {
-//   return some<Container>(element_parser) | epsilon_<Container>();
-// }
+template<typename Container>
+Parser<Container> many(Parser<typename Container::value_type> element_parser) {
+  return some<Container>(element_parser) | epsilon_<Container>();
+}
 
-// template<typename Container>
-// Parser<Container> some(Parser<typename Container::value_type> element_parser) {
-//   Parser<std::tuple<typename Container::value_type, Container>> combined_parser = element_parser >> many<Container>(element_parser);
-//   return apply(combined_parser, [](auto res){
-//     auto [element_res, many_res] = res;
-//     if(!element_res) {
-//       return std::get<ErrorMessage>(element_res);
-//     }
-//     if(!many_res) {
-//       return std::get<ErrorMessage>(element_res);
-//     }
-//     Container many_container = std::get<Container>(many_res);
+template<typename Container>
+Parser<Container> some(Parser<typename Container::value_type> element_parser) {
+  Parser<std::tuple<typename Container::value_type, Container>> combined_parser = element_parser >> many<Container>(element_parser);
+  return myapply(combined_parser, [](typename Container::value_type element_res, Container many_res){
 
-//     Container final_result{};
-//     final_result.push_back(std::get<typename Container::value_type>(element_res));
-//     final_result.insert(final_result.end(), many_container.begin(), many_container.end());
-//     return final_result;
-//   });
-// }
+    Container final_result{};
+    final_result.push_back(element_res);
+    final_result.insert(final_result.end(), many_res.begin(), many_res.end());
+    return final_result;
+  });
+}
 
 auto myparser = (char_('x') >> char_('y') >> char_('z')
                  | char_('a') >> char_('b') >> char_('c'))
@@ -259,7 +252,6 @@ auto myparser = (char_('x') >> char_('y') >> char_('z')
               ;
 
 auto parser2 = string_("foo") | string_("faa");
-
 
 class Person {
   std::string d_first_name;
@@ -276,12 +268,39 @@ Parser<Person> parser3 = string_("john") >> string_("snow");
 
 // Parser<std::vector<char>> parser4 = some<std::vector<char>>(char_('z'));
 
-auto parser5 = myapply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) -> char {
-  return lhs;
+Parser<std::string> parser5 = myapply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
+  return lhs + rhs;
  });
 
 #include <iostream>
 #include <vector>
+
+template<typename T>
+Result<T> runParser(Parser<T> parser) {
+  Result<T> result = parser(std::cin);
+  if(!result) {
+    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
+  } else {
+    std::cout << "Parse success!\n";
+  }
+
+  return result;
+}
+
+
+
+template <>
+Result<std::string> runParser(Parser<std::string> parser) {
+  Result<std::string> result = parser(std::cin);
+  if(!result) {
+    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
+  } else {
+    std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
+  }
+
+  return result;
+}
+
 int main() {
   std::cout << "Hello, world!\n";
   int x = 42;
@@ -291,25 +310,31 @@ int main() {
   Result<std::string> bar = foo;
   // int baz = y + bar;
 
+  runParser(myparser);
+  runParser(parser2);
+  runParser(parser3);
+  // runParser(parser4);
+  runParser(parser5);
+
   // Result<std::tuple<char, char, char>> result = myparser(std::cin);
-  Result<std::string> result = myparser(std::cin);
-  if(!result) {
-    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
-  } else {
-    std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
-  }
+  // Result<std::string> result = myparser(std::cin);
+  // if(!result) {
+  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
+  // } else {
+  //   std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
+  // }
 
-  Result<std::string> result2 = parser2(std::cin);
-  if(!result2) {
-    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result2).message << '\n';
-  } else {
-    std::cout << "Parse success!\n";
-  }
+  // Result<std::string> result2 = parser2(std::cin);
+  // if(!result2) {
+  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result2).message << '\n';
+  // } else {
+  //   std::cout << "Parse success!\n";
+  // }
 
-  Result<Person> result3 = parser3(std::cin);
-  if(!result3) {
-    std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result3).message << '\n';
-  } else {
-    std::cout << "Parse success!\n";
-  }
+  // Result<Person> result3 = parser3(std::cin);
+  // if(!result3) {
+  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result3).message << '\n';
+  // } else {
+  //   std::cout << "Parse success!\n";
+  // }
 }
