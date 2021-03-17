@@ -208,7 +208,7 @@ operator >>(Parser<A> p1, Parser<B> p2) {
 }
 
 template<typename A>
-Parser<A> operator| (Parser<A> lhs, Parser<A> rhs) {
+Parser<A> operator | (Parser<A> lhs, Parser<A> rhs) {
   return [=](std::istream &input) -> Result<A> {
     Result<A> res1 = lhs(input);
     if (res1) {
@@ -231,13 +231,20 @@ Parser<Container> some(Parser<typename Container::value_type> element_parser);
 
 template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser) {
-  return some<Container>(element_parser) | epsilon_<Container>();
+  // Wrapping is necessary to make this 'lazy'.
+  return [=](std::istream &input) {
+    return (some<Container>(element_parser) | epsilon_<Container>())(input);
+  };
 }
+
+#include <iostream>
+#include <vector>
+
 
 template<typename Container>
 Parser<Container> some(Parser<typename Container::value_type> element_parser) {
   Parser<std::tuple<typename Container::value_type, Container>> combined_parser = element_parser >> many<Container>(element_parser);
-  return myapply(combined_parser, [](typename Container::value_type element_res, Container many_res){
+  return myapply(combined_parser, [](typename Container::value_type element_res, Container many_res) {
 
     Container final_result{};
     final_result.push_back(element_res);
@@ -246,9 +253,9 @@ Parser<Container> some(Parser<typename Container::value_type> element_parser) {
   });
 }
 
-auto myparser = (char_('x') >> char_('y') >> char_('z')
-                 | char_('a') >> char_('b') >> char_('c'))
-              // | string_("foo")
+auto myparser =
+    char_('x') >> char_('y') >> char_('z')
+  | char_('a') >> char_('b') >> char_('c')
               ;
 
 auto parser2 = string_("foo") | string_("faa");
@@ -266,14 +273,12 @@ public:
 
 Parser<Person> parser3 = string_("john") >> string_("snow");
 
-// Parser<std::vector<char>> parser4 = some<std::vector<char>>(char_('z'));
+Parser<std::string> parser4 = some<std::string>(char_('z'));
 
 Parser<std::string> parser5 = myapply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
   return lhs + rhs;
  });
 
-#include <iostream>
-#include <vector>
 
 template<typename T>
 Result<T> runParser(Parser<T> parser) {
@@ -310,11 +315,11 @@ int main() {
   Result<std::string> bar = foo;
   // int baz = y + bar;
 
-  runParser(myparser);
-  runParser(parser2);
-  runParser(parser3);
-  // runParser(parser4);
-  runParser(parser5);
+  // runParser(myparser);
+  // runParser(parser2);
+  // runParser(parser3);
+  runParser(parser4);
+  // runParser(parser5);
 
   // Result<std::tuple<char, char, char>> result = myparser(std::cin);
   // Result<std::string> result = myparser(std::cin);
