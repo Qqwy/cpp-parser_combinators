@@ -49,7 +49,7 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// which can be constructed from the tuple's elements
   template<typename C>
   operator Result<C> () const {
-    if(*this){
+    if(bool(*this)) {
       return constructFromTuple<C>(std::get<T>(*this));
     } else {
       return std::get<ErrorMessage>(*this);
@@ -118,9 +118,7 @@ template<typename T>
 Parser<std::tuple<>> ignore(Parser<T> const &parser) {
   return [=](std::istream &input) -> Result<std::tuple<>> {
     auto res = parser(input);
-    if(!bool(res)){
-      return std::get<ErrorMessage>(res);
-    }
+    if(!bool(res)){ return std::get<ErrorMessage>(res); }
 
     return std::make_tuple();
   };
@@ -192,9 +190,7 @@ Parser<std::string> string_(std::string const &target) {
 template<typename F, typename A> auto map(Parser<A> const &parser, F &&fun) -> Parser<decltype(fun(std::declval<A>()))> {
   return [=](std::istream &input) -> Result<decltype(fun(std::declval<A>()))> {
     Result<A> res = parser(input);
-    if(!bool(res)) {
-      return std::get<ErrorMessage>(res);
-    }
+    if(!bool(res)) { return std::get<ErrorMessage>(res); }
 
     return fun(std::get<A>(res));
   };
@@ -378,7 +374,7 @@ Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
 
   return [=](std::istream &input) -> Result<A> {
     Result<A> lhs = elem(input);
-    if(!bool(lhs)){ return std::get<ErrorMessage>(lhs); }
+    if(!bool(lhs)){ return lhs; }
 
     Result<A> res = lhs;
 
@@ -412,7 +408,7 @@ Parser<A> chainr1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
 
   return [=](std::istream &input) -> Result<A> {
     Result<A> lhs = elem(input);
-    if(!bool(lhs)){ return std::get<ErrorMessage>(lhs); }
+    if(!bool(lhs)){ return lhs; }
 
     Result<A> res = lhs;
 
