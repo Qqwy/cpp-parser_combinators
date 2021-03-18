@@ -7,6 +7,9 @@
 #include <iostream>
 #include <vector>
 
+/// Error messages are just strings
+/// but you could envision e.g. also keeping track of line and column information
+/// et cetera.
 struct ErrorMessage {
   std::string message;
 };
@@ -97,9 +100,15 @@ template<typename F> auto action_(F &&fun) {
 }
 
 /// Unconditionally construct something, regardless of current input.
+
+template<typename T>
+Parser<T> constant(T &&val){
+  return action_([=]{ return val; });
+}
+
 template<typename DefaultConstructible>
 Parser<DefaultConstructible> epsilon_() {
-  return action_([]{ return DefaultConstructible{}; });
+  return constant(DefaultConstructible{});
 }
 
 /// ignore result of `parser`
@@ -276,7 +285,7 @@ template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser) {
   // Wrapping is necessary to make this 'lazy'.
   // otherwise we'd stackoverflow on construction by infinite recursion
-  return lazy(some<Container>(element_parser) | epsilon_<Container>());
+  return lazy(some<Container>(element_parser) | constant(Container{}));
 }
 
 template<typename Container>
@@ -337,22 +346,11 @@ Parser<std::string> parser5 = mapApply(char_('x') >> string_("asdf"), [](auto lh
 
 template<typename T>
 Parser<T> maybe(Parser<T> elem) {
-  return elem | epsilon_<T>();
+  return elem | constant(T{});
 }
 
 Parser<std::string> digits = some<std::string>(digit);
 Parser<size_t> uint_ = map(digits, [](std::string const &str){ return std::stoul(str.c_str()); });
-  // return [=](std::istream &input) -> Result<size_t> {
-  //   auto str_res = some<std::string>(digit)(input);
-  //   if(!str_res) {
-  //     return std::get<ErrorMessage>(str_res);
-  //   }
-  //   auto res = std::stoul(std::get<std::string>(str_res).c_str());
-  //   std::cout << "res: " << res << '\n';
-  //   return res;
-  // };
-// }
-// Parser<int> int_parser = map(maybe>(char_('-')) >> some<std::string>(digit), [](std::string const &str) { return std::atoi(str.c_str()); });
 
 Parser<std::string> maybe_sign = string_("+") | string_("-") | string_("");
 Parser<std::string> signed_digits = maybe_sign + digits;
@@ -364,6 +362,35 @@ Parser<double> double_() {
     return std::atof(val.c_str());
   });
 }
+
+template<typename A>
+Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> combiner) {
+  return [=](std::istream &input) -> Result<A> {
+    Result<A> lhs = elem(input);
+    if(!bool(lhs)){ return std::get<ErrorMessage>(lhs); }
+
+    Result<A> res = lhs;
+
+    while(true) {
+      Result<std::function<A(A, A)>> combiner_res = combiner(input);
+      if(!bool(combiner_res)){ return res; }
+
+      Result<A> rhs = elem(input);
+      if(!bool(rhs)){ return res; }
+
+      std::function<A(A, A)> combiner_fun = std::get<std::function<A(A, A)>>(combiner_res);
+      res = combiner_fun(std::get<A>(res), std::get<A>(rhs));
+    }
+  };
+}
+
+Parser<std::function<size_t(size_t, size_t)>> plus() {
+  return ignore(string_("+")) >> constant(std::plus<size_t>());
+}
+
+Parser<size_t> uint_expression() {
+  return chainl1(lex(uint_), lex(plus()));
+};
 
 template<typename T>
 Result<T> runParser(Parser<T> parser) {
@@ -378,34 +405,6 @@ Result<T> runParser(Parser<T> parser) {
 
   return result;
 }
-// template<>
-// Result<size_t> runParser(Parser<size_t> parser) {
-//   Result<size_t> result = parser(std::cin);
-//   if(!result) {
-//     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
-//   } else {
-//     // std::cout << "Parse success! " << '\n';
-//     size_t val = std::get<size_t>(result);
-//     std::cout << "Parse success! " << val << '\n';
-//   }
-
-//   return result;
-// }
-
-
-
-
-// template <>
-// Result<std::string> runParser(Parser<std::string> parser) {
-//   Result<std::string> result = parser(std::cin);
-//   if(!result) {
-//     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
-//   } else {
-//     std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
-//   }
-
-//   return result;
-// }
 
 int main() {
   std::cout << "Hello, world!\n";
@@ -416,32 +415,12 @@ int main() {
   Result<std::string> bar = foo;
   // int baz = y + bar;
 
-  runParser(parser2);
-  runParser(parser3);
+  // runParser(parser2);
+  // runParser(parser3);
   // runParser(parser4);
   // runParser(parser5);
   // runParser(int_);
-  runParser(double_());
+  // runParser(double_());
+  runParser(uint_expression());
 
-  // Result<std::tuple<char, char, char>> result = myparser(std::cin);
-  // Result<std::string> result = myparser(std::cin);
-  // if(!result) {
-  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
-  // } else {
-  //   std::cout << "Parse success:" << std::get<std::string>(result) << "!\n";
-  // }
-
-  // Result<std::string> result2 = parser2(std::cin);
-  // if(!result2) {
-  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result2).message << '\n';
-  // } else {
-  //   std::cout << "Parse success!\n";
-  // }
-
-  // Result<Person> result3 = parser3(std::cin);
-  // if(!result3) {
-  //   std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result3).message << '\n';
-  // } else {
-  //   std::cout << "Parse success!\n";
-  // }
 }
