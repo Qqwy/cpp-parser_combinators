@@ -312,7 +312,7 @@ Parser<T> lex(Parser<T> parser) {
 
 template<typename T>
 Parser<T> lex(Parser<T> (*parser)()) {
-  return lex(*parser);
+  return lex(parser());
 }
 
 class Person {
@@ -461,9 +461,7 @@ Result<T> runParser(Parser<T> parser) {
   if(!bool(result)) {
     std::cout << "Syntax error: Expected " << std::get<ErrorMessage>(result).message << '\n';
   } else {
-    // std::cout << "Parse success! " << '\n';
-    T val = std::get<T>(result);
-    std::cout << "Parse success! " << val << '\n';
+    std::cout << "Parse success! " << std::get<T>(result) << '\n';
   }
 
   return result;
@@ -484,6 +482,6 @@ int main() {
   // runParser(parser5);
   // runParser(int_);
   // runParser(double_());
-  runParser(uint_expression());
+  runParser(double_expression());
 
 }
