@@ -40,7 +40,7 @@ struct Result : public std::variant<T, ErrorMessage> {
 
   /// Shorthand to check whether the result holds a T or an ErrorMessage
   explicit operator bool() const {
-    return !std::holds_alternative<ErrorMessage>(*this);
+    return std::holds_alternative<T>(*this);
   }
 
   /// Converts tuples where all elements have the same type
@@ -116,8 +116,12 @@ Parser<DefaultConstructible> epsilon_() {
 /// (which will disappear when this parser is used in sequence with other parsers)
 template<typename T>
 Parser<std::tuple<>> ignore(Parser<T> const &parser) {
-  return [=](std::istream &input) {
-    parser(input);
+  return [=](std::istream &input) -> Result<std::tuple<>> {
+    auto res = parser(input);
+    if(!bool(res)){
+      return std::get<ErrorMessage>(res);
+    }
+
     return std::make_tuple();
   };
 }
@@ -234,12 +238,12 @@ template<typename A>
 Parser<A> operator |(Parser<A> const &lhs, Parser<A> const &rhs) {
   return [=](std::istream &input) -> Result<A> {
     Result<A> res1 = lhs(input);
-    if (res1) {
+    if (bool(res1)) {
       return res1;
     }
 
     Result<A> res2 = rhs(input);
-    if (res2) {
+    if (bool(res2)) {
       return res2;
     }
 
@@ -310,6 +314,11 @@ Parser<T> lex(Parser<T> parser) {
   return parser >> ignore(whitespace);
 }
 
+template<typename T>
+Parser<T> lex(Parser<T> (*parser)()) {
+  return lex(*parser);
+}
+
 class Person {
   std::string d_first_name;
   std::string d_last_name;
@@ -364,7 +373,9 @@ Parser<double> double_() {
 }
 
 template<typename A>
-Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> combiner) {
+Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+  using F = std::function<A(A, A)>;
+
   return [=](std::istream &input) -> Result<A> {
     Result<A> lhs = elem(input);
     if(!bool(lhs)){ return std::get<ErrorMessage>(lhs); }
@@ -372,24 +383,80 @@ Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> combiner) {
     Result<A> res = lhs;
 
     while(true) {
-      Result<std::function<A(A, A)>> combiner_res = combiner(input);
-      if(!bool(combiner_res)){ return res; }
+      Result<F> binop_res = binop(input);
+      if(!bool(binop_res)){ return res; }
 
       Result<A> rhs = elem(input);
       if(!bool(rhs)){ return res; }
 
-      std::function<A(A, A)> combiner_fun = std::get<std::function<A(A, A)>>(combiner_res);
-      res = combiner_fun(std::get<A>(res), std::get<A>(rhs));
+      res = std::get<F>(binop_res)(std::get<A>(res), std::get<A>(rhs));
     }
   };
 }
 
-Parser<std::function<size_t(size_t, size_t)>> plus() {
-  return ignore(string_("+")) >> constant(std::plus<size_t>());
+template<typename A>
+Parser<A> chainl(Parser<A> elem, Parser<std::function<A(A, A)>> binop, A default_val) {
+  return chainl1 | constant(default_val);
+}
+
+template<typename A>
+Parser<A> chainl(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+  return chainl1 | constant(A{});
+}
+
+
+
+template<typename A>
+Parser<A> chainr1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+  using F = std::function<A(A, A)>;
+
+  return [=](std::istream &input) -> Result<A> {
+    Result<A> lhs = elem(input);
+    if(!bool(lhs)){ return std::get<ErrorMessage>(lhs); }
+
+    Result<A> res = lhs;
+
+    Result<F> binop_res = binop(input);
+    if(!bool(binop_res)){ return res; }
+
+    Result<A> rhs = chainr1(elem, binop)(input);
+    if(!bool(rhs)){ return res; }
+
+    return std::get<F>(binop_res)(std::get<A>(res), std::get<A>(rhs));
+  };
+}
+
+template<typename A>
+Parser<A> chainr(Parser<A> elem, Parser<std::function<A(A, A)>> binop, A default_val) {
+  return chainr1 | constant(default_val);
+}
+
+template<typename A>
+Parser<A> chainr(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+  return chainr1 | constant(A{});
+}
+
+template<typename A>
+Parser<std::function<A(A, A)>> plus() {
+  return ignore(string_("+")) >> constant(std::plus<A>());
+}
+
+template<typename A>
+Parser<std::function<A(A, A)>> minus() {
+  return ignore(string_("-")) >> constant(std::minus<A>());
+}
+
+template<typename A>
+Parser<std::function<A(A, A)>> addOp() {
+  return minus<A>() | plus<A>();
 }
 
 Parser<size_t> uint_expression() {
-  return chainl1(lex(uint_), lex(plus()));
+  return chainl1(lex(uint_), lex(addOp<size_t>()));
+};
+
+Parser<double> double_expression() {
+  return chainl1(lex(double_), lex(addOp<double>()));
 };
 
 template<typename T>
