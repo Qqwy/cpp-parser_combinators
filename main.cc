@@ -432,6 +432,82 @@ Parser<A> chainr(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
   return chainr1 | constant(A{});
 }
 
+#include <numeric>
+
+template<typename A>
+class Associativity {
+  using F = std::function<A(A, A)>;
+
+  std::vector<Parser<F>> d_binops;
+
+public:
+  Associativity(std::initializer_list<Parser<F>> const &binops) : d_binops(binops)
+  {
+    if (d_binops.size() == 0) {
+      throw "empty sublist in expression parser table.";
+    }
+  };
+
+  virtual ~Associativity() = default;
+
+  Parser<A> toParser(Parser<A> const &inner) const {
+    Parser<F> default_val = *d_binops.begin();
+
+    Parser<F> binops_parser =
+        std::accumulate(++d_binops.begin(), d_binops.end(), default_val,
+                        std::bit_or<Parser<F>>());
+
+    return toParserImpl(inner, binops_parser);
+  }
+
+private:
+  virtual Parser<A> toParserImpl(Parser<A> const &inner, Parser<F> const & binop_parser) const {
+    return inner;
+  };
+};
+
+template<typename A>
+class Left : public Associativity<A> {
+  using F = std::function<A(A, A)>;
+  using Associativity<A>::Associativity;
+
+
+private:
+  Parser<A> toParserImpl(Parser<A> const &inner,
+                               Parser<F> const &binop_parser) const final
+  {
+    return chainl1(inner, binop_parser);
+  };
+};
+
+template <typename A> class Right : public Associativity<A> {
+  using F = std::function<A(A, A)>;
+  using Associativity<A>::Associativity;
+
+private:
+  Parser<A> toParserImpl(Parser<A> const &inner,
+                         Parser<F> const &binop_parser) const final {
+    return chainr1(inner, binop_parser);
+  };
+};
+
+#include <memory>
+template <typename A>
+Parser<A> makeExpressionParserFromTable(
+    Parser<A> const &inner,
+    std::vector<
+    Associativity<A>> table) {
+  if (table.size() == 0) {
+    throw "empty expression parser table.";
+  }
+
+  Parser<A> result = (*table.begin()).toParser(inner);
+  std::for_each(++table.begin(), table.end(), [&](auto &&row) {
+    result = row.toParser(result);
+  });
+  return result;
+};
+
 template<typename A>
 Parser<std::function<A(A, A)>> plus() {
   return ignore(string_("+")) >> constant(std::plus<A>());
@@ -440,6 +516,14 @@ Parser<std::function<A(A, A)>> plus() {
 template<typename A>
 Parser<std::function<A(A, A)>> minus() {
   return ignore(string_("-")) >> constant(std::minus<A>());
+}
+
+template <typename A> Parser<std::function<A(A, A)>> mul() {
+  return ignore(string_("+")) >> constant(std::multiplies<A>());
+}
+
+template <typename A> Parser<std::function<A(A, A)>> div() {
+  return ignore(string_("-")) >> constant(std::divides<A>());
 }
 
 template<typename A>
@@ -454,6 +538,15 @@ Parser<size_t> uint_expression() {
 Parser<double> double_expression() {
   return chainl1(lex(double_), lex(addOp<double>()));
 };
+
+Parser<double> fullDoubleExpression() {
+  return makeExpressionParserFromTable(
+      lex(double_), {
+        Left<double>{lex(plus<double>()), lex(minus<double>())},
+        Left<double>{lex(mul<double>()), lex(div<double>())},
+      });
+}
+
 
 Parser<char> newline() {
   return char_('\n');
