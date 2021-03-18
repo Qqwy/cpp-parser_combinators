@@ -455,6 +455,18 @@ Parser<double> double_expression() {
   return chainl1(lex(double_), lex(addOp<double>()));
 };
 
+Parser<char> newline() {
+  return char_('\n');
+}
+
+Parser<char> non_newline() {
+  return satisfy([](char val){ return val != '\n'; }, "non-newline");
+}
+
+Parser<std::tuple<>> comment() {
+  return ignore(string_("//") >> many<std::string>(non_newline()) >> whitespace());
+}
+
 template<typename T>
 Result<T> runParser(Parser<T> parser) {
   Result<T> result = parser(std::cin);
