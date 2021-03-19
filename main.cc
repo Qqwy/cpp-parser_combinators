@@ -144,6 +144,7 @@ Parser<char> char_(char target) {
   };
 }
 
+
 /// Parse and return any character satisfying `checking_fun`.
 /// examples: `satisfy(isspace)`, `satisfy(isdigit)` etc.
 Parser<char> satisfy(std::function<bool(char)> checking_fun, const char *name) {
@@ -206,6 +207,11 @@ template<typename F, typename A> auto mapError(Parser<A> const &parser, F &&fun)
 
     return res;
   };
+}
+
+Parser<std::tuple<>> eof() {
+  return mapError(ignore(char_(std::char_traits<char>::eof())),
+                  [](auto &&) { return "<end of input>"; });
 }
 
 /// Transform the result of a Parser<Tuple> into another type of result
@@ -735,11 +741,10 @@ Result<T> parsePartial(Parser<T> parser, std::istream &in) {
   return result;
 }
 
+
 template <typename T>
 Result<T> parse(Parser<T> parser, std::istream &in) {
-  auto eof_parser = mapError(ignore(char_(std::char_traits<char>::eof())), [](auto &&){ return "<end of input>";});
-
-  return parsePartial<T>(parser >> eof_parser, in);
+  return parsePartial<T>(parser >> eof(), in);
 }
 
   int main() {
