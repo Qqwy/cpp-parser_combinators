@@ -289,7 +289,10 @@ Container prependElement(typename Container::value_type const &first, Container 
 /// Note that `lazy` needs to be defined as a macro,
 /// because we only want to evaluate the parameter `parser`
 /// when called (rather than before). That's the whole point.
-#define lazy(parser) [=](std::istream &input) { return (parser)(input); }
+#define lazy(parser)                                                           \
+  Parser<typename decltype((parser))::value_type> {                                     \
+    [=](std::istream &input) { return (parser)(input); }                \
+      }
 
 /// Zero or more repetitions of `element_parser`.
 template<typename Container>
@@ -585,7 +588,7 @@ private:
 template <typename A>
 Parser<A> makeExpressionParserFromTable(
     Parser<A> const &inner,
-    std::vector < std::reference_wrapper<Precedence<A>>> table) {
+    std::vector < std::reference_wrapper<Precedence<A>>> const &table) {
 
   Parser<A> result = inner;
   for(auto &&row : table) {
@@ -594,117 +597,128 @@ Parser<A> makeExpressionParserFromTable(
   return result;
 };
 
-template <typename F>
-BinaryopLeft<typename F::result_type> binary_left(Parser<F> binop_parser) {
-  return BinaryopLeft<typename F::result_type>(binop_parser);
-}
-
-template <typename F, typename... Fs>
-BinaryopLeft<typename F::result_type> binary_left(Parser<F> first_binop_parser, Fs ...other_binop_parsers) {
-  return BinaryopLeft<typename F::result_type>(first_binop_parser, other_binop_parsers...);
-}
-
-template <typename F>
-BinaryopLeft<typename F::result_type> binary_left(Parser<F> (*binop_parser)()) {
-  return BinaryopLeft<typename F::result_type>(binop_parser());
-}
-
-template <typename F, typename... Fs>
-  BinaryopLeft<typename F::result_type> binary_left(Parser<F> (*first_binop_parser)(),
-                                                  Fs... other_binop_parsers) {
-  return BinaryopLeft<typename F::result_type>(first_binop_parser(),
-                                               other_binop_parsers()...);
-}
-
-template <typename F>
-BinaryopRight<typename F::result_type> binary_right(Parser<F> binop_parser) {
-  return BinaryopRight<typename F::result_type>(binop_parser);
-}
-
-template <typename F, typename... Fs>
-BinaryopRight<typename F::result_type> binary_right(Parser<F> first_binop_parser,
-             Fs... other_binop_parsers) {
-  return BinaryopRight<typename F::result_type>(first_binop_parser, other_binop_parsers...);
-}
-
-template <typename F>
-BinaryopRight<typename F::result_type> binary_right(Parser<F> (*binop_parser)()) {
-  return BinaryopRight<typename F::result_type>(binop_parser());
-}
-
-template <typename F, typename... Fs>
-BinaryopRight<typename F::result_type>
-binary_right(Parser<F> (*first_binop_parser)(), Fs... other_binop_parsers) {
-  return BinaryopRight<typename F::result_type>(first_binop_parser(),
-                                                other_binop_parsers()...);
-}
-
 template <typename A>
-UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> unaryop_parser) {
-  return UnaryopPostfix<A>(unaryop_parser);
+Parser<A> makeExpressionParserFromTable(
+    Parser<A> (*inner)(),
+    std::vector<std::reference_wrapper<Precedence<A>>> const &table) {
+  return makeExpressionParserFromTable(inner(), table);
 }
 
-template <typename A, typename... As>
-UnaryopPostfix<A>
-postfix(Parser<std::function<A(A)>> first_unaryop_parser,
-                          As... other_unaryop_parsers) {
-  return UnaryopPostfix<A>(first_unaryop_parser, other_unaryop_parsers...);
-}
+  template <typename F>
+  BinaryopLeft<typename F::result_type> binary_left(Parser<F> binop_parser) {
+    return BinaryopLeft<typename F::result_type>(binop_parser);
+  }
 
-template <typename F>
-UnaryopPrefix<typename F::result_type> prefix(Parser<F> unaryop_parser) {
-  return UnaryopPrefix<typename F::result_type>(unaryop_parser);
-}
+  template <typename F, typename... Fs>
+  BinaryopLeft<typename F::result_type> binary_left(
+      Parser<F> first_binop_parser, Fs... other_binop_parsers) {
+    return BinaryopLeft<typename F::result_type>(first_binop_parser,
+                                                 other_binop_parsers...);
+  }
 
-template <typename F, typename... Fs>
-UnaryopPrefix<typename F::result_type>
-prefix(Parser<F> (*first_unaryop_parser)(),
-              Fs... other_unaryop_parsers) {
-  return UnaryopPrefix<typename F::result_type>(first_unaryop_parser(), other_unaryop_parsers...);
-}
+  template <typename F>
+  BinaryopLeft<typename F::result_type> binary_left(
+      Parser<F>(*binop_parser)()) {
+    return BinaryopLeft<typename F::result_type>(binop_parser());
+  }
 
+  template <typename F, typename... Fs>
+  BinaryopLeft<typename F::result_type> binary_left(
+      Parser<F>(*first_binop_parser)(), Fs... other_binop_parsers) {
+    return BinaryopLeft<typename F::result_type>(first_binop_parser(),
+                                                 other_binop_parsers()...);
+  }
 
-// template<typename A>
-// Parser<std::function<A(A, A)>> plus() {
-//   return ignore(lex(string_("+"))) >> constant(std::plus<A>());
-// }
+  template <typename F>
+  BinaryopRight<typename F::result_type> binary_right(Parser<F> binop_parser) {
+    return BinaryopRight<typename F::result_type>(binop_parser);
+  }
 
-// template<typename A>
-// Parser<std::function<A(A, A)>> minus() {
-//   return ignore(lex(string_("-"))) >> constant(std::minus<A>());
-// }
+  template <typename F, typename... Fs>
+  BinaryopRight<typename F::result_type> binary_right(
+      Parser<F> first_binop_parser, Fs... other_binop_parsers) {
+    return BinaryopRight<typename F::result_type>(first_binop_parser,
+                                                  other_binop_parsers...);
+  }
 
-// template <typename A> Parser<std::function<A(A, A)>> mul() {
-//   return ignore(lex(string_("*"))) >> constant(std::multiplies<A>());
-// }
+  template <typename F>
+  BinaryopRight<typename F::result_type> binary_right(
+      Parser<F>(*binop_parser)()) {
+    return BinaryopRight<typename F::result_type>(binop_parser());
+  }
 
-// template <typename A> Parser<std::function<A(A, A)>> div() {
-//   return ignore(lex(string_("/"))) >> constant(std::divides<A>());
-// }
+  template <typename F, typename... Fs>
+  BinaryopRight<typename F::result_type> binary_right(
+      Parser<F>(*first_binop_parser)(), Fs... other_binop_parsers) {
+    return BinaryopRight<typename F::result_type>(first_binop_parser(),
+                                                  other_binop_parsers()...);
+  }
 
-// #include <cmath>
-// template <typename A> Parser<std::function<A(A, A)>> exp() {
-//   return ignore(lex(string_("^"))) >> constant([](auto &&left, auto &&right) { return std::pow(left, right); });
-// }
+  template <typename A>
+  UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> unaryop_parser) {
+    return UnaryopPostfix<A>(unaryop_parser);
+  }
 
-// template <typename A> Parser<std::function<A(A)>> neg() {
-//   return ignore(lex(string_("-"))) >> constant(std::negate<A>());
-// }
-Parser<std::function<double(double, double)>> plus() {
-  return ignore(lex(string_("+"))) >> constant(std::plus());
-}
+  template <typename A, typename... As>
+  UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> first_unaryop_parser,
+                            As... other_unaryop_parsers) {
+    return UnaryopPostfix<A>(first_unaryop_parser, other_unaryop_parsers...);
+  }
 
-Parser<std::function<double(double, double)>> minus() {
-  return ignore(lex(string_("-"))) >> constant(std::minus<double>());
-}
+  template <typename F>
+  UnaryopPrefix<typename F::result_type> prefix(Parser<F> unaryop_parser) {
+    return UnaryopPrefix<typename F::result_type>(unaryop_parser);
+  }
 
-Parser<std::function<double(double, double)>> mul() {
-  return ignore(lex(string_("*"))) >> constant(std::multiplies<double>());
-}
+  template <typename F, typename... Fs>
+  UnaryopPrefix<typename F::result_type> prefix(
+      Parser<F>(*first_unaryop_parser)(), Fs... other_unaryop_parsers) {
+    return UnaryopPrefix<typename F::result_type>(first_unaryop_parser(),
+                                                  other_unaryop_parsers...);
+  }
 
-Parser<std::function<double(double, double)>> divide() {
-  return ignore(lex(string_("/"))) >> constant(std::divides<double>());
-}
+  // template<typename A>
+  // Parser<std::function<A(A, A)>> plus() {
+  //   return ignore(lex(string_("+"))) >> constant(std::plus<A>());
+  // }
+
+  // template<typename A>
+  // Parser<std::function<A(A, A)>> minus() {
+  //   return ignore(lex(string_("-"))) >> constant(std::minus<A>());
+  // }
+
+  // template <typename A> Parser<std::function<A(A, A)>> mul() {
+  //   return ignore(lex(string_("*"))) >> constant(std::multiplies<A>());
+  // }
+
+  // template <typename A> Parser<std::function<A(A, A)>> div() {
+  //   return ignore(lex(string_("/"))) >> constant(std::divides<A>());
+  // }
+
+  // #include <cmath>
+  // template <typename A> Parser<std::function<A(A, A)>> exp() {
+  //   return ignore(lex(string_("^"))) >> constant([](auto &&left, auto
+  //   &&right) { return std::pow(left, right); });
+  // }
+
+  // template <typename A> Parser<std::function<A(A)>> neg() {
+  //   return ignore(lex(string_("-"))) >> constant(std::negate<A>());
+  // }
+  Parser<std::function<double(double, double)>> plus() {
+    return ignore(lex(string_("+"))) >> constant(std::plus());
+  }
+
+  Parser<std::function<double(double, double)>> minus() {
+    return ignore(lex(string_("-"))) >> constant(std::minus<double>());
+  }
+
+  Parser<std::function<double(double, double)>> mul() {
+    return ignore(lex(string_("*"))) >> constant(std::multiplies<double>());
+  }
+
+  Parser<std::function<double(double, double)>> divide() {
+    return ignore(lex(string_("/"))) >> constant(std::divides<double>());
+  }
 
 #include <cmath>
 Parser<std::function<double(double, double)>> exp() {
@@ -740,9 +754,9 @@ Parser<A> parenthesized(Parser<A> const &inner) {
   return between(lex(char_('(')), lex(char_(')')), inner);
 }
 
-Parser<double> nestedDouble();
+Parser<double> term();
 
-Parser<double> fullDoubleExpression() {
+Parser<double> expression() {
   // return makeExpressionParserFromTable(
   // nestedDouble(), {
   //     prefix(neg<double>()),
@@ -753,17 +767,17 @@ Parser<double> fullDoubleExpression() {
 
   // /// Here is what it could look like with overloads providing a little extra syntactic sugar.
   return makeExpressionParserFromTable(
-      nestedDouble(), {
-        prefix(neg()),
+      term, {
+        prefix(neg),
         binary_right(exp),
         binary_left(mul, divide),
         binary_left(plus, minus),
     });
 }
 
-Parser<double> nestedDouble() {
-  Parser<double> recurse = lazy(fullDoubleExpression());
-  return lex(double_()) | parenthesized(recurse);
+Parser<double> term() {
+  // Parser<double> recurse = lazy(expression());
+  return lex(double_()) | parenthesized(lazy(expression()));
 }
 
 Parser<char> newline() {
@@ -790,10 +804,17 @@ Result<T> parsePartial(Parser<T> parser, std::istream &in) {
   return result;
 }
 
+template <typename T> Result<T> parsePartial(Parser<T>(*parser)(), std::istream &in) {
+  return parsePartial(parser(), in);
+}
 
 template <typename T>
 Result<T> parse(Parser<T> parser, std::istream &in) {
   return parsePartial<T>(parser >> eof(), in);
+}
+
+template <typename T> Result<T> parse(Parser<T> (*parser)(), std::istream &in) {
+  return parse(parser(), in);
 }
 
   int main() {
@@ -804,5 +825,5 @@ Result<T> parse(Parser<T> parser, std::istream &in) {
     // runParser(int_);
     // runParser(double_());
     // runParser(double_expression());
-    parse(fullDoubleExpression(), std::cin);
+    parse(expression, std::cin);
   }
