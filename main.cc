@@ -619,53 +619,53 @@ BinaryopRight<A> binary_right(Parser<std::function<A(A, A)>> first_binop_parser,
 }
 
 template <typename A>
-UnaryopPostfix<A> unary_postfix(Parser<std::function<A(A)>> unaryop_parser) {
+UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> unaryop_parser) {
   return UnaryopPostfix<A>(unaryop_parser);
 }
 
 template <typename A, typename... As>
-UnaryopPostfix<A> unary_postfix(Parser<std::function<A(A)>> first_unaryop_parser,
+UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> first_unaryop_parser,
                           As... other_unaryop_parsers) {
   return UnaryopPostfix<A>(first_unaryop_parser, other_unaryop_parsers...);
 }
 
 template <typename A>
-UnaryopPrefix<A> unary_prefix(Parser<std::function<A(A)>> unaryop_parser) {
+UnaryopPrefix<A> prefix(Parser<std::function<A(A)>> unaryop_parser) {
   return UnaryopPrefix<A>(unaryop_parser);
 }
 
 template <typename A, typename... As>
 UnaryopPrefix<A>
-unary_prefix(Parser<std::function<A(A)>> first_unaryop_parser,
+prefix(Parser<std::function<A(A)>> first_unaryop_parser,
               As... other_unaryop_parsers) {
   return UnaryopPrefix<A>(first_unaryop_parser, other_unaryop_parsers...);
 }
 
 template<typename A>
 Parser<std::function<A(A, A)>> plus() {
-  return ignore(string_("+")) >> constant(std::plus<A>());
+  return ignore(lex(string_("+"))) >> constant(std::plus<A>());
 }
 
 template<typename A>
 Parser<std::function<A(A, A)>> minus() {
-  return ignore(string_("-")) >> constant(std::minus<A>());
+  return ignore(lex(string_("-"))) >> constant(std::minus<A>());
 }
 
 template <typename A> Parser<std::function<A(A, A)>> mul() {
-  return ignore(string_("*")) >> constant(std::multiplies<A>());
+  return ignore(lex(string_("*"))) >> constant(std::multiplies<A>());
 }
 
 template <typename A> Parser<std::function<A(A, A)>> div() {
-  return ignore(string_("/")) >> constant(std::divides<A>());
+  return ignore(lex(string_("/"))) >> constant(std::divides<A>());
 }
 
 #include <cmath>
 template <typename A> Parser<std::function<A(A, A)>> exp() {
-  return ignore(string_("^")) >> constant([](auto &&left, auto &&right) { return std::pow(left, right); });
+  return ignore(lex(string_("^"))) >> constant([](auto &&left, auto &&right) { return std::pow(left, right); });
 }
 
 template <typename A> Parser<std::function<A(A)>> neg() {
-  return ignore(string_("-")) >> constant(std::negate<A>());
+  return ignore(lex(string_("-"))) >> constant(std::negate<A>());
 }
 
 template<typename A>
@@ -696,16 +696,16 @@ Parser<double> nestedDouble();
 Parser<double> fullDoubleExpression() {
   return makeExpressionParserFromTable(
   nestedDouble(), {
-      unary_prefix(lex(neg<double>())),
-      binary_right(lex(exp<double>())),
-      binary_left(lex(mul<double>()), lex(div<double>())),
-      binary_left(lex(plus<double>()), lex(minus<double>())),
+      prefix(neg<double>()),
+      binary_right(exp<double>()),
+      binary_left(mul<double>(), div<double>()),
+      binary_left(plus<double>(), minus<double>()),
   });
 
   // /// Here is what it could look like with overloads providing a little extra syntactic sugar.
   // return makeExpressionParserFromTable(
   //     nestedDouble(), {
-  //       unary_prefix(neg),
+  //       prefix(neg),
   //       binary_right(exp),
   //       binary_left(mul, div),
   //       binary_left(plus, minus),
@@ -748,14 +748,6 @@ Result<T> parse(Parser<T> parser, std::istream &in) {
 }
 
   int main() {
-    std::cout << "Hello, world!\n";
-    int x = 42;
-    std::string foo = "foo";
-    // AutoTuple res = AutoTuple<int>(x) + foo;
-    Result<int> y = x;
-    Result<std::string> bar = foo;
-    // int baz = y + bar;
-
     // runParser(parser2);
     // runParser(parser3);
     // runParser(parser4);
