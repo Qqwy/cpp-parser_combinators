@@ -401,7 +401,15 @@ Parser<A> chainl(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
   return chainl1 | constant(A{});
 }
 
+template <typename T>
+Parser<T> choice(Parser<T> parser) {
+  return parser;
+}
 
+template <typename T, typename... Ts>
+Parser<T> choice(Parser<T> first, Ts... rest) {
+  return first | choice(rest...);
+}
 
 template<typename A>
 Parser<A> chainr1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
@@ -433,39 +441,34 @@ Parser<A> chainr(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
   return chainr1 | constant(A{});
 }
 
-#include <numeric>
+template <typename A>
+class Precedence {
+  // using F = std::function<A(A)>;
+public:
+  virtual ~Precedence() = default;
+
+  virtual Parser<A> toParser(Parser<A> const &inner) const = 0;
+
+  operator std::reference_wrapper<Precedence<A>>() {
+    return std::ref(*this);
+  }
+};
 
 template<typename A>
-class Associativity {
+class Binop : public Precedence<A> {
   using F = std::function<A(A, A)>;
 
-  std::vector<Parser<F>> d_binops;
+  Parser<F> d_binops_parser;
 
 public:
-  Associativity(std::initializer_list<Parser<F>> const &binops) : d_binops(binops)
-  {
-    if (d_binops.size() == 0) {
-      throw "empty sublist in expression parser table.";
-    }
-  };
+  template<typename ...Fs>
+  Binop(Parser<F> const &first, Fs ...rest) : d_binops_parser(choice(first, rest...))
+  {};
 
-  virtual ~Associativity() = default;
-
-  Parser<A> toParser(Parser<A> const &inner) const {
-    Parser<F> result = d_binops[0];
-    for(size_t index = 1; index < d_binops.size(); ++index) {
-      result = result | d_binops[index];
-    }
-    // Parser<F> default_val = *d_binops.begin();
-
-    // Parser<F> binops_parser =
-    //     std::accumulate(++d_binops.begin(), d_binops.end(), default_val,
-    //                     std::bit_or<Parser<F>>());
-
-    return toParserImpl(inner, result);
+  Parser<A> toParser(Parser<A> const &inner) const final {
+    return toParserImpl(inner, d_binops_parser);
   }
 
-  operator std::reference_wrapper<Associativity<A>>() { return std::ref(*this); }
 
 private:
   virtual Parser<A> toParserImpl(Parser<A> const &inner, Parser<F> const & binop_parser) const {
@@ -478,9 +481,9 @@ private:
 // Associativity(std::initializer_list<Parser<std::function<A(A, A)>>> const &binops) -> Associativity<typename decltype(binops.begin())::value_type::return_type>;
 
 template<typename A>
-class Left : public Associativity<A> {
+class BinopLeft : public Binop<A> {
   using F = std::function<A(A, A)>;
-  using Associativity<A>::Associativity;
+  using Binop<A>::Binop;
 
 
 
@@ -493,9 +496,9 @@ private:
 };
 
 template <typename A>
-class Right : public Associativity<A> {
+class BinopRight : public Binop<A> {
   using F = std::function<A(A, A)>;
-  using Associativity<A>::Associativity;
+  using Binop<A>::Binop;
 
 private:
   Parser<A> toParserImpl(Parser<A> const &inner,
@@ -509,7 +512,7 @@ private:
 template <typename A>
 Parser<A> makeExpressionParserFromTable(
     Parser<A> const &inner,
-    std::vector < std::reference_wrapper<Associativity<A>>> table) {
+    std::vector < std::reference_wrapper<Precedence<A>>> table) {
 
   Parser<A> result = inner;
   for(auto &&row : table) {
@@ -519,15 +522,25 @@ Parser<A> makeExpressionParserFromTable(
 };
 
 template <typename A>
-Left<A> left(std::initializer_list<Parser<std::function<A(A, A)>>> const &binops) {
-  return Left<A>{binops};
-};
+BinopLeft<A> binop_left(Parser<std::function<A(A, A)>> binop_parser) {
+  return BinopLeft<A>(binop_parser);
+}
+
+template <typename A, typename... As>
+BinopLeft<A> binop_left(Parser<std::function<A(A, A)>> first_binop_parser, As ...other_binop_parsers) {
+  return BinopLeft<A>(first_binop_parser, other_binop_parsers...);
+}
 
 template <typename A>
-Right<A>
-right(std::initializer_list<Parser<std::function<A(A, A)>>> const &binops) {
-  return Right<A>{binops};
-};
+BinopRight<A> binop_right(Parser<std::function<A(A, A)>> binop_parser) {
+  return BinopRight<A>(binop_parser);
+}
+
+template <typename A, typename... As>
+BinopRight<A> binop_right(Parser<std::function<A(A, A)>> first_binop_parser,
+             As... other_binop_parsers) {
+  return BinopRight<A>(first_binop_parser, other_binop_parsers...);
+}
 
 template<typename A>
 Parser<std::function<A(A, A)>> plus() {
@@ -563,14 +576,14 @@ Parser<double> double_expression() {
 Parser<double> fullDoubleExpression() {
   return makeExpressionParserFromTable(
     lex(double_), {
-      left({lex(mul<double>()), lex(div<double>())}),
-      left({lex(plus<double>()), lex(minus<double>())}),
+      binop_left(lex(mul<double>()), lex(div<double>())),
+      binop_left(lex(plus<double>()), lex(minus<double>())),
     });
 
   // return makeExpressionParserFromTable(
   //     double_, {
-  //       left({mul, div}),
-  //       left({plus, minus}),
+  //       binop_left({mul, div}),
+  //       binop_left({plus, minus}),
   //   });
 }
 
