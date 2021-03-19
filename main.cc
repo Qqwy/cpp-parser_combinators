@@ -56,10 +56,14 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// into a container (like a `std::vector` or a `std::string`)
   /// or any other type
   /// which can be constructed from the tuple's elements
-  template <typename C, typename = std::enable_if_t<is_specialization<T, std::tuple>{}>>
+  template <typename C>
   operator Result<C>() const {
     if(bool(*this)) {
-      return constructFromTuple<C>(std::get<T>(*this));
+      if constexpr (is_specialization<T, std::tuple>{}) {
+        return constructFromTuple<C>(std::get<T>(*this));
+      } else {
+        return std::get<T>(*this);
+      }
     } else {
       return std::get<ErrorMessage>(*this);
     }
@@ -629,31 +633,31 @@ Parser<A> makeExpressioParser(Parser<A> (*inner)(), As... rest) {
 //   return makeExpressioParser(inner(), table);
 // }
 
-template <typename A>
-BinaryopLeft<A> binary_left(Parser<std::function<A(A, A)>> const &binop_parser) {
-  return BinaryopLeft<A>(binop_parser);
-}
+// template <typename A>
+// BinaryopLeft<A> binary_left(Parser<std::function<A(A, A)>> const &binop_parser) {
+//   return BinaryopLeft<A>(binop_parser);
+// }
 
 template <typename A, typename F, typename... Fs>
 BinaryopLeft<A> binary_left(
                             F const &first_binop_parser, Fs... other_binop_parsers) {
   Parser<std::function<A(A, A)>> foo = first_binop_parser;
-  return BinaryopLeft<typename F::value_type::return_type>(foo,
+  return BinaryopLeft<A>(foo,
                          other_binop_parsers...);
 }
 
-template <typename A>
-BinaryopLeft<A> binary_left(
-                            Parser<std::function<A(A, A)>>(*binop_parser)()) {
-  return BinaryopLeft<A>(binop_parser());
-}
+// template <typename A>
+// BinaryopLeft<A> binary_left(
+//                             Parser<std::function<A(A, A)>>(*binop_parser)()) {
+//   return BinaryopLeft<A>(binop_parser());
+// }
 
-template <typename A, typename... Fs>
-BinaryopLeft<A> binary_left(
-                            Parser<std::function<A(A, A)>>(*first_binop_parser)(), Fs... other_binop_parsers) {
-  return BinaryopLeft<A>(first_binop_parser(),
-                         other_binop_parsers()...);
-}
+// template <typename A, typename... Fs>
+// BinaryopLeft<A> binary_left(
+//                             Parser<std::function<A(A, A)>>(*first_binop_parser)(), Fs... other_binop_parsers) {
+//   return BinaryopLeft<A>(first_binop_parser(),
+//                          other_binop_parsers()...);
+// }
 
 template <typename A>
 BinaryopRight<A> binary_right(Parser<std::function<A(A, A)>> const &binop_parser) {
@@ -801,10 +805,10 @@ Parser<double> term();
 Parser<double> expression() {
   return makeExpressioParser(
           term,
-          prefix(neg()),
-          binary_right(exp),
-          binary_left(mul, divide),
-          binary_left(plus(), minus())
+          // prefix(neg()),
+          // binary_right(exp),
+          // binary_left(mul, divide),
+          binary_left<double>(plus(), minus())
         );
 }
 
