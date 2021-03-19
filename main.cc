@@ -585,24 +585,24 @@ private:
 };
 
 template <typename A>
-Parser<A> makeExpressionParserFromTable(Parser<A> const &inner) {
+Parser<A> makeExpressioParser(Parser<A> const &inner) {
   return inner;
 }
 
 template <typename A, typename... As>
-Parser<A> makeExpressionParserFromTable(Parser<A> const &inner, Precedence<A> const &next, As...rest) {
+Parser<A> makeExpressioParser(Parser<A> const &inner, Precedence<A> const &next, As...rest) {
   Parser<A> result = next.toParser(inner);
-  return makeExpressionParserFromTable(result, rest...);
+  return makeExpressioParser(result, rest...);
 }
 
 template <typename A, typename... As>
-Parser<A> makeExpressionParserFromTable(Parser<A> (*inner)(), As... rest) {
-  return makeExpressionParserFromTable(inner(), rest...);
+Parser<A> makeExpressioParser(Parser<A> (*inner)(), As... rest) {
+  return makeExpressioParser(inner(), rest...);
 }
 
 // #include <memory>
 // template <typename A>
-// Parser<A> makeExpressionParserFromTable(
+// Parser<A> makeExpressioParser(
 //                                         Parser<A> const &inner,
 //                                         std::vector < std::reference_wrapper<Precedence<A>>> const &table) {
 
@@ -614,10 +614,10 @@ Parser<A> makeExpressionParserFromTable(Parser<A> (*inner)(), As... rest) {
 // };
 
 // template <typename A>
-// Parser<A> makeExpressionParserFromTable(
+// Parser<A> makeExpressioParser(
 //                                         Parser<A> (*inner)(),
 //                                         std::vector<std::reference_wrapper<Precedence<A>>> const &table) {
-//   return makeExpressionParserFromTable(inner(), table);
+//   return makeExpressioParser(inner(), table);
 // }
 
 template <typename A>
@@ -772,23 +772,29 @@ Parser<A> between(Parser<B> const &lhs, Parser<C> const &rhs, Parser<A> const &m
 
 template <typename A>
 Parser<A> parenthesized(Parser<A> const &inner) {
-  return between(lex(char_('(')), lex(char_(')')), inner);
+  return between(lex(char_('(')), lex(char_(')')), lazy(inner));
+}
+
+template <typename A>
+Parser<A>
+    parenthesized(Parser<A> (*inner)()) {
+  return parenthesized(inner());
 }
 
 Parser<double> term();
 
 Parser<double> expression() {
-  return makeExpressionParserFromTable(
-                                       term,
-                                       prefix(neg),
-                                       binary_right(exp),
-                                       binary_left(mul, divide),
-                                       binary_left(plus, minus)
-                                       );
+  return makeExpressioParser(
+          term,
+          prefix(neg),
+          binary_right(exp),
+          binary_left(mul, divide),
+          binary_left(plus, minus)
+        );
 }
 
 Parser<double> term() {
-  return lex(double_()) | parenthesized(lazy(expression()));
+  return lex(double_) | parenthesized(expression);
 }
 
 Parser<char> newline() {
