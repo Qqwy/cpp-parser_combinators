@@ -35,6 +35,9 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// Inherit constructors from std::variant
   using std::variant<T, ErrorMessage>::variant;
 
+  // Result(Result<T> const &) = default;
+  // Result(Result<T> &&) = default;
+
   /// To help other TMP functions
   typedef T value_type;
 
@@ -47,8 +50,8 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// into a container (like a `std::vector` or a `std::string`)
   /// or any other type
   /// which can be constructed from the tuple's elements
-  template<typename C>
-  operator Result<C> () const {
+  template <typename C, typename... Fs, typename = std::enable_if<std::is_same_v<T, std::tuple<Fs...>>>>
+  operator Result<C>() const {
     if(bool(*this)) {
       return constructFromTuple<C>(std::get<T>(*this));
     } else {
@@ -545,7 +548,7 @@ template <typename A> class Binop : public Precedence<A> {
 public:
   template <typename... Fs>
   Binop(Parser<F> const &first, Fs... rest)
-    : d_binops_parser(choice(first, rest...)){};
+    : d_binops_parser(choice(first, Parser<F>(rest)...)){};
 
   Parser<A> toParser(Parser<A> const &inner) const final {
     return toParserImpl(inner, d_binops_parser);
@@ -625,10 +628,10 @@ BinaryopLeft<A> binary_left(Parser<std::function<A(A, A)>> const &binop_parser) 
   return BinaryopLeft<A>(binop_parser);
 }
 
-template <typename A, typename... Fs>
-BinaryopLeft<A> binary_left(
-                            Parser<std::function<A(A, A)>> const &first_binop_parser, Fs... other_binop_parsers) {
-  return BinaryopLeft<A>(first_binop_parser,
+template <typename F, typename... Fs>
+BinaryopLeft<typename F::result_type> binary_left(
+                            F const &first_binop_parser, Fs... other_binop_parsers) {
+  return BinaryopLeft<typename F::result_type>(Parser<typename F::value_type>{first_binop_parser},
                          other_binop_parsers...);
 }
 
@@ -686,17 +689,17 @@ UnaryopPrefix<A> prefix(Parser<std::function<A(A)>> const &unaryop_parser) {
   return UnaryopPrefix<A>(unaryop_parser);
 }
 
-template <typename A>
-UnaryopPrefix<A> prefix(Parser<std::function<A(A)>> (*unaryop_parser)()) {
-  return UnaryopPrefix<A>(unaryop_parser());
-}
+// template <typename A>
+// UnaryopPrefix<A> prefix(Parser<std::function<A(A)>> (*unaryop_parser)()) {
+//   return UnaryopPrefix<A>(unaryop_parser());
+// }
 
-template <typename A, typename... Fs>
-UnaryopPrefix<A> prefix(
-                        Parser<std::function<A(A)>> const &first_unaryop_parser, Fs... other_unaryop_parsers) {
-  return UnaryopPrefix<A>(first_unaryop_parser(),
-                          other_unaryop_parsers()...);
-}
+// template <typename A, typename... Fs>
+// UnaryopPrefix<A> prefix(
+//                         Parser<std::function<A(A)>> const &first_unaryop_parser, Fs... other_unaryop_parsers) {
+//   return UnaryopPrefix<A>(first_unaryop_parser,
+//                           other_unaryop_parsers...);
+// }
 
 // template<typename A>
 // Parser<std::function<A(A, A)>> plus() {
@@ -725,11 +728,11 @@ UnaryopPrefix<A> prefix(
 // template <typename A> Parser<std::function<A(A)>> neg() {
 //   return ignore(lex(string_("-"))) >> constant(std::negate<A>());
 // }
-Parser<std::function<double(double, double)>> plus() {
-  return ignore(lex(string_("+"))) >> constant(std::plus());
+Parser<decltype(std::plus())> plus() {
+  return ignore(lex(string_("+"))) >> constant(std::plus<void>());
 }
 
-Parser<std::function<double(double, double)>> minus() {
+Parser<decltype(std::minus<void>())> minus() {
   return ignore(lex(string_("-"))) >> constant(std::minus());
 }
 
@@ -748,7 +751,10 @@ Parser<std::function<double(double, double)>> exp() {
   });
 }
 
-Parser<std::function<double(double)>> neg() {
+// template <typename F = std::function<double(double)>>
+// template <typename F = std::function<double(double)>> Parser<F> neg() {
+template <typename F> Parser<F> neg() {
+  // Parser<std::function<double(double)>> neg() {
   return ignore(lex(string_("-"))) >> constant(std::negate());
 }
 
@@ -762,7 +768,9 @@ Parser<std::function<double(double)>> neg() {
 // };
 
 Parser<double> double_expression() {
-  return chainl1(lex(double_), plus() | minus());
+  return chainl1(lex(double_),
+                 Parser<std::function<double(double, double)>>{plus()} |
+                 Parser<std::function<double(double, double)>>{minus()});
 };
 
 template<typename A, typename B, typename C>
@@ -786,10 +794,10 @@ Parser<double> term();
 Parser<double> expression() {
   return makeExpressioParser(
           term,
-          prefix(neg),
+          prefix(neg()),
           binary_right(exp),
           binary_left(mul, divide),
-          binary_left(plus, minus)
+          binary_left(plus(), minus())
         );
 }
 
