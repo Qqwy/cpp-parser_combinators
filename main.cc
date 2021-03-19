@@ -613,7 +613,7 @@ template <typename F, typename... Fs>
   BinaryopLeft<typename F::result_type> binary_left(Parser<F> (*first_binop_parser)(),
                                                   Fs... other_binop_parsers) {
   return BinaryopLeft<typename F::result_type>(first_binop_parser(),
-                                               other_binop_parsers...);
+                                               other_binop_parsers()...);
 }
 
 template <typename F>
@@ -636,7 +636,7 @@ template <typename F, typename... Fs>
 BinaryopRight<typename F::result_type>
 binary_right(Parser<F> (*first_binop_parser)(), Fs... other_binop_parsers) {
   return BinaryopRight<typename F::result_type>(first_binop_parser(),
-                                                other_binop_parsers...);
+                                                other_binop_parsers()...);
 }
 
 template <typename A>
@@ -645,22 +645,24 @@ UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> unaryop_parser) {
 }
 
 template <typename A, typename... As>
-UnaryopPostfix<A> postfix(Parser<std::function<A(A)>> first_unaryop_parser,
+UnaryopPostfix<A>
+postfix(Parser<std::function<A(A)>> first_unaryop_parser,
                           As... other_unaryop_parsers) {
   return UnaryopPostfix<A>(first_unaryop_parser, other_unaryop_parsers...);
 }
 
-template <typename A>
-UnaryopPrefix<A> prefix(Parser<std::function<A(A)>> unaryop_parser) {
-  return UnaryopPrefix<A>(unaryop_parser);
+template <typename F>
+UnaryopPrefix<typename F::result_type> prefix(Parser<F> unaryop_parser) {
+  return UnaryopPrefix<typename F::result_type>(unaryop_parser);
 }
 
-template <typename A, typename... As>
-UnaryopPrefix<A>
-prefix(Parser<std::function<A(A)>> first_unaryop_parser,
-              As... other_unaryop_parsers) {
-  return UnaryopPrefix<A>(first_unaryop_parser, other_unaryop_parsers...);
+template <typename F, typename... Fs>
+UnaryopPrefix<typename F::result_type>
+prefix(Parser<F> (*first_unaryop_parser)(),
+              Fs... other_unaryop_parsers) {
+  return UnaryopPrefix<typename F::result_type>(first_unaryop_parser(), other_unaryop_parsers...);
 }
+
 
 // template<typename A>
 // Parser<std::function<A(A, A)>> plus() {
