@@ -14,6 +14,12 @@ struct ErrorMessage {
   std::string message;
 };
 
+template <class T, template <class...> class Template>
+struct is_specialization : std::false_type {};
+
+template <template <class...> class Template, class... Args>
+struct is_specialization<Template<Args...>, Template> : std::true_type {};
+
 /// Wrap `A` and `B` into a tuple.
 /// Overloaded to create a flat tuple even if `A` or `B` themselves are already tuples
 template<typename   A , typename    B > std::tuple<A    , B    > wrapInTuple(A                 const &lhs, B                 const &rhs) { return std::make_tuple(lhs, rhs); }
@@ -50,7 +56,7 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// into a container (like a `std::vector` or a `std::string`)
   /// or any other type
   /// which can be constructed from the tuple's elements
-  template <typename C, typename... Fs, typename = std::enable_if<std::is_same_v<T, std::tuple<Fs...>>>>
+  template <typename C, typename = std::enable_if_t<is_specialization<T, std::tuple>{}>>
   operator Result<C>() const {
     if(bool(*this)) {
       return constructFromTuple<C>(std::get<T>(*this));
@@ -628,10 +634,11 @@ BinaryopLeft<A> binary_left(Parser<std::function<A(A, A)>> const &binop_parser) 
   return BinaryopLeft<A>(binop_parser);
 }
 
-template <typename F, typename... Fs>
-BinaryopLeft<typename F::result_type> binary_left(
+template <typename A, typename F, typename... Fs>
+BinaryopLeft<A> binary_left(
                             F const &first_binop_parser, Fs... other_binop_parsers) {
-  return BinaryopLeft<typename F::result_type>(Parser<typename F::value_type>{first_binop_parser},
+  Parser<std::function<A(A, A)>> foo = first_binop_parser;
+  return BinaryopLeft<typename F::value_type::return_type>(foo,
                          other_binop_parsers...);
 }
 
@@ -767,11 +774,11 @@ template <typename F> Parser<F> neg() {
 //   return chainl1(lex(uint_), lex(addOp<size_t>()));
 // };
 
-Parser<double> double_expression() {
-  return chainl1(lex(double_),
-                 Parser<std::function<double(double, double)>>{plus()} |
-                 Parser<std::function<double(double, double)>>{minus()});
-};
+// Parser<double> double_expression() {
+//   return chainl1(lex(double_),
+//                  Parser<std::function<double(double, double)>>{plus()} |
+//                  Parser<std::function<double(double, double)>>{minus()});
+// };
 
 template<typename A, typename B, typename C>
 Parser<A> between(Parser<B> const &lhs, Parser<C> const &rhs, Parser<A> const &middle) {
