@@ -1,4 +1,4 @@
-CXX := g++
+CXX := clang++
 CXXFLAGS := -std=c++2a -Wall -Werror -g
 
 .PHONY: build

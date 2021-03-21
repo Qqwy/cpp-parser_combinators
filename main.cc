@@ -16,13 +16,13 @@ struct ErrorMessage {
 
 /// Wrap `A` and `B` into a tuple.
 /// Overloaded to create a flat tuple even if `A` or `B` themselves are already tuples
-template<typename   A , typename    B > std::tuple<A    , B    > wrapInTuple(A                 const &lhs, B                 const &rhs) { return std::make_tuple(lhs, rhs); }
-template<typename...As, typename ...Bs> std::tuple<As..., Bs...> wrapInTuple(std::tuple<As...> const &lhs, std::tuple<Bs...> const &rhs) { return std::tuple_cat(lhs, rhs);  }
-template<typename   A , typename ...Bs> std::tuple<A    , Bs...> wrapInTuple(A                 const &lhs, std::tuple<Bs...> const &rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
-template<typename...As, typename     B> std::tuple<As..., B    > wrapInTuple(std::tuple<As...> const &lhs, B                 const &rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
+template<typename   A , typename    B > std::tuple<A    , B    > constexpr wrapInTuple(A                 const &lhs, B                 const &rhs) { return std::make_tuple(lhs, rhs); }
+template<typename...As, typename ...Bs> std::tuple<As..., Bs...> constexpr wrapInTuple(std::tuple<As...> const &lhs, std::tuple<Bs...> const &rhs) { return std::tuple_cat(lhs, rhs);  }
+template<typename   A , typename ...Bs> std::tuple<A    , Bs...> constexpr wrapInTuple(A                 const &lhs, std::tuple<Bs...> const &rhs) { return std::tuple_cat(std::make_tuple(lhs), rhs); }
+template<typename...As, typename     B> std::tuple<As..., B    > constexpr wrapInTuple(std::tuple<As...> const &lhs, B                 const &rhs) { return std::tuple_cat(lhs, std::make_tuple(rhs)); }
 
 template <typename C, typename... Ts>
-C constructFromTuple(std::tuple<Ts...> const &tuple)
+constexpr C constructFromTuple(std::tuple<Ts...> const &tuple)
 {
   return std::apply([](auto... elements){ return C{elements...}; }, tuple);
 }
@@ -39,7 +39,7 @@ struct Result : public std::variant<T, ErrorMessage> {
   typedef T value_type;
 
   /// Shorthand to check whether the result holds a T or an ErrorMessage
-  explicit operator bool() const {
+  explicit constexpr operator bool() const {
     return std::holds_alternative<T>(*this);
   }
 
@@ -48,7 +48,7 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// or any other type
   /// which can be constructed from the tuple's elements
   template<typename C>
-  operator Result<C> () const {
+  constexpr operator Result<C> () const {
     if(bool(*this)) {
       return constructFromTuple<C>(std::get<T>(*this));
     } else {
@@ -57,7 +57,8 @@ struct Result : public std::variant<T, ErrorMessage> {
   }
 };
 
-template<typename A, typename B> auto operator +(Result<A> const &lhs, Result<B> const &rhs) -> Result<decltype(wrapInTuple(std::get<A>(lhs), std::get<B>(rhs)))> {
+template <typename A, typename B>
+auto constexpr operator +(Result<A> const &lhs, Result<B> const &rhs) -> Result<decltype(wrapInTuple(std::get<A>(lhs), std::get<B>(rhs)))> {
   if(!bool(lhs)) {
     return std::get<ErrorMessage>(lhs);
   }
@@ -69,7 +70,8 @@ template<typename A, typename B> auto operator +(Result<A> const &lhs, Result<B>
   return wrapInTuple(std::get<A>(lhs), std::get<B>(rhs));
 };
 
-template<typename A> auto operator |(Result<A> const &lhs, Result<A> const &rhs) {
+template <typename A>
+auto constexpr operator |(Result<A> const &lhs, Result<A> const &rhs) {
   if(bool(lhs)) {
     return lhs;
   }
@@ -88,13 +90,13 @@ struct Parser : public std::function<Result<T>(std::istream &)> {
   /// Fun sugar to allow parsers that take no arguments
   /// to be written without `()`.
   /// e.g. writing `digit` instead of `digit()`.
-  Parser(Parser<T> (*ptr)()) :
+  constexpr Parser(Parser<T> (*ptr)()) :
     Parser(ptr())
   {}
 };
 
 /// Run any function regardless of current input
-template<typename F> auto action_(F &&fun) {
+template<typename F> auto constexpr action_(F &&fun) {
   return [=](std::istream &) {
     return fun();
   };
@@ -103,12 +105,12 @@ template<typename F> auto action_(F &&fun) {
 /// Unconditionally construct something, regardless of current input.
 
 template<typename T>
-Parser<T> constant(T &&val){
+constexpr Parser<T> constant(T &&val){
   return action_([=]{ return val; });
 }
 
 template<typename DefaultConstructible>
-Parser<DefaultConstructible> epsilon_() {
+constexpr Parser<DefaultConstructible> constant() {
   return constant(DefaultConstructible{});
 }
 
@@ -117,12 +119,9 @@ Parser<DefaultConstructible> epsilon_() {
 /// (which will disappear when this parser is used in sequence with other parsers)
 template<typename T>
 Parser<std::tuple<>> ignore(Parser<T> const &parser) {
-  return [=](std::istream &input) -> Result<std::tuple<>> {
-    auto res = parser(input);
-    if(!bool(res)){ return std::get<ErrorMessage>(res); }
-
+  return map(parser, [](auto &&) {
     return std::make_tuple();
-  };
+  });
 }
 
 /// Syntactic sugar to be able to call ignore also without parentheses for parameter-less parsers. :-)
@@ -221,13 +220,9 @@ Parser<std::tuple<>> eof() {
 /// (Note: The templated arguments allow C++ to do more automatic type-inference
 /// than if we'd use `std::function` instead.)
 template<typename F, typename Tuple> auto mapApply(Parser<Tuple> const &parser, F &&fun) {
-  return [=](std::istream &input) -> Result<decltype(std::apply(fun, std::declval<Tuple>()))> {
-    auto res = parser(input);
-    if(!bool(res)) {
-      return std::get<ErrorMessage>(res);
-    }
-    return std::apply(fun, std::get<Tuple>(res));
-  };
+  return map(parser, [=](auto &&res) {
+    return std::apply(fun, res);
+  });
 }
 
 /// Compose two parsers in sequence: Run `p1` followed by `p2`.

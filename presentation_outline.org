@@ -1,0 +1,31 @@
+* Outline
+* What?
+** Alternative way of working with parsers
+** Instead of treating parsers as a monolithic thing generated from a grammar file...
+** ...treat them as small building blocks which can be combined into more sophisticated ones.
+*** legoes example
+* How?
+** Basic ideas
+*** A parser is a function `istream & -> T` ...
+*** ... or rather, `istream & -> T or ErrorMessage`
+*** Result<T>:
+**** ErrorMessage
+**** 'tagged union'
+**** std::variant
+*** Parser = function istream & -> Result<T>
+** Core parsers:
+*** Primitives
+**** constant
+**** char_
+**** satisfy
+**** string_
+*** Combinators:
+**** map
+**** mapError
+**** sequence (>>)
+**** alternative (|)
+** Extending our toolbox
+**** ignore
+**** mapApply
+* Why?
+* Conclusion
