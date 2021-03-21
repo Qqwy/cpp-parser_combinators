@@ -18,14 +18,49 @@
 **** constant
 **** char_
 **** satisfy
+***** digit
+***** space
 **** string_
 *** Combinators:
 **** map
 **** mapError
 **** sequence (>>)
+***** Revisit 'Result'/wrapInTuple. 
 **** alternative (|)
 ** Extending our toolbox
 **** ignore
 **** mapApply
+**** sequenceAppend (+)
+**** many, many1
+**** maybe
+**** more examples:
+***** lex
+***** digits, uint_
+***** signed_digits, int_
+***** double_
+**** chainl
+**** chainr
+**** piece d'resistance: expressionParser
 * Why?
-* Conclusion
+** Advantages:
+*** Small building blocks: All parts of a parser are also a parser
+*** Build your parser /inside the host language/!
+**** Parsers are a first-class datatype: use the functions, tests, syntax highlighting, error messages and any other tools you are already used to while building the parser.
+**** Parser Combinators are commonly LL, but need not be:
+***** The combinator part is about building a grammar programmatically/parametrically.
+***** Freedom in how this grammar is then turned into a parser:
+****** Boost.Spirit also having a lexer combinator and a pretty-printer combinator.
+****** Existence of e.g. invertible-syntax.
+**** Parsers compose, so you can abstract!
+** Disadvantages:
+*** Only ergonomic if EDSL can be. (Operator overloading can get us very close).
+*** Relies on compiler to make it efficient. (In the past this was problematic and required TMP to get right. Now not really a problem with `auto`, `decltype` and `constexpr`.)
+*** Still less known in literature (because existing 'only' for 20 years, Generators have been around for 50).
+* Conclusion & Remarks
+** Code examples available online
+** *example* code which:
+*** MF1F for simplicity's sake (and time constraints, and everything is templated).
+*** Some suboptimal algorithms
+*** does not create very optimal binaries.
+**** Reason: using std::function.
+     Using CRTP + constexpr instead will inline all functions/lambdas at compile-time. 

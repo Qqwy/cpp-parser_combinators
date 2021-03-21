@@ -119,9 +119,12 @@ constexpr Parser<DefaultConstructible> constant() {
 /// (which will disappear when this parser is used in sequence with other parsers)
 template<typename T>
 Parser<std::tuple<>> ignore(Parser<T> const &parser) {
-  return map(parser, [](auto &&) {
+  return [=](std::istream &input) -> Result<std::tuple<>> {
+    auto res = parser(input);
+    if(!bool(res)){ return std::get<ErrorMessage>(res); }
+
     return std::make_tuple();
-  });
+  };
 }
 
 /// Syntactic sugar to be able to call ignore also without parentheses for parameter-less parsers. :-)
@@ -188,7 +191,7 @@ Parser<std::string> string_(std::string const &target) {
 ///
 /// (Note: The templated arguments allow C++ to do more automatic type-inference
 /// than if we'd use `std::function` instead.)
-template<typename F, typename A> auto map(Parser<A> const &parser, F &&fun) -> Parser<decltype(fun(std::declval<A>()))> {
+template<typename F, typename A> auto map(Parser<A> const &parser, F const &fun) -> Parser<decltype(fun(std::declval<A>()))> {
   return [=](std::istream &input) -> Result<decltype(fun(std::declval<A>()))> {
     Result<A> res = parser(input);
     if(!bool(res)) { return std::get<ErrorMessage>(res); }
