@@ -103,7 +103,7 @@ template<typename F> auto constexpr action(F &&fun) {
   };
 }
 
-/// Unconditionally construct something, regardless of current input.
+/// Unconditionally construct many1thing, regardless of current input.
 template<typename T>
 constexpr Parser<T> constant(T &&val){
   return action([=]{ return val; });
@@ -275,7 +275,7 @@ Parser<A> operator +(Parser<A> const &lhs, Parser<A> const &rhs) {
   return mapApply(lhs >> rhs, std::plus());
 }
 
-/// Helper function for `many`/`some`.
+/// Helper function for `many`/`many1`.
 /// Given a T `first` and a C<T> `rest`, creates a new C<T> with `first` at the front.
 /// Note: This implementation is simple but inefficient.
 /// Optimizing it is left a an exercise to the reader ;-)
@@ -289,7 +289,7 @@ Container prependElement(typename Container::value_type const &first, Container 
   return result;
 }
 
-/// Note: `many` and `some` are mutually recursive.
+/// Note: `many` and `many1` are mutually recursive.
 
 /// Note that `lazy` needs to be defined as a macro,
 /// because we only want to evaluate the parameter `parser`
@@ -305,17 +305,17 @@ Parser<Container> many(Parser<typename Container::value_type> element_parser);
 
 /// One or more repetitions of `element_parser`.
 template<typename Container>
-Parser<Container> some(Parser<typename Container::value_type> element_parser);
+Parser<Container> many1(Parser<typename Container::value_type> element_parser);
 
 template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser) {
   // Wrapping is necessary to make this 'lazy'.
   // otherwise we'd stackoverflow on construction by infinite recursion
-  return lazy(some<Container>(element_parser) | constant(Container{}));
+  return lazy(many1<Container>(element_parser) | constant(Container{}));
 }
 
 template<typename Container>
-Parser<Container> some(Parser<typename Container::value_type> element_parser) {
+Parser<Container> many1(Parser<typename Container::value_type> element_parser) {
   auto res = element_parser >> many<Container>(element_parser);
 
   return mapApply(res, prependElement<Container>);
@@ -369,7 +369,7 @@ auto parser2 = string_("foo") | string_("faa");
 // Parser<Person> parser3 = string_("john") >> whitespace() >> string_("snow") >> whitespace();
 Parser<Person> parser3 = lex(string_("john")) >> lex(string_("snow"));
 
-Parser<std::string> parser4 = some<std::string>(char_('z'));
+Parser<std::string> parser4 = many1<std::string>(char_('z'));
 
 Parser<std::string> parser5 = mapApply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
   return lhs + rhs;
@@ -380,7 +380,7 @@ Parser<T> maybe(Parser<T> elem) {
   return elem | constant(T{});
 }
 
-Parser<std::string> digits = some<std::string>(digit);
+Parser<std::string> digits = many1<std::string>(digit);
 Parser<size_t> uint_ = map(digits, [](std::string const &str){ return std::stoul(str.c_str()); });
 
 Parser<std::string> maybe_sign = string_("+") | string_("-") | string_("");
