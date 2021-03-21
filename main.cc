@@ -96,17 +96,17 @@ struct Parser : public std::function<Result<T>(std::istream &)> {
 };
 
 /// Run any function regardless of current input
-template<typename F> auto constexpr action_(F &&fun) {
+/// Using this directly is not often useful, except maybe for debugging.
+template<typename F> auto constexpr action(F &&fun) {
   return [=](std::istream &) {
     return fun();
   };
 }
 
 /// Unconditionally construct something, regardless of current input.
-
 template<typename T>
 constexpr Parser<T> constant(T &&val){
-  return action_([=]{ return val; });
+  return action([=]{ return val; });
 }
 
 template<typename DefaultConstructible>
@@ -133,20 +133,6 @@ Parser<std::tuple<>> ignore(Parser<T> (*parser)()) {
   return ignore(parser());
 }
 
-/// Parse exactly the character `target`.
-Parser<char> char_(char target) {
-  return [=](std::istream &input) -> Result<char> {
-    char val = input.get();
-    if(val == target) {
-      return val;
-    } else {
-      input.unget();
-      return ErrorMessage{std::string{1, target}};
-    }
-  };
-}
-
-
 /// Parse and return any character satisfying `checking_fun`.
 /// examples: `satisfy(isspace)`, `satisfy(isdigit)` etc.
 Parser<char> satisfy(std::function<bool(char)> checking_fun, const char *name) {
@@ -161,13 +147,34 @@ Parser<char> satisfy(std::function<bool(char)> checking_fun, const char *name) {
   };
 }
 
+#if false
+/// Parse exactly the character `target`.
+Parser<char> char_(char target) {
+  return [=](std::istream &input) -> Result<char> {
+    char val = input.get();
+    if (val == target) {
+      return val;
+    } else {
+      input.unget();
+      return ErrorMessage{std::string{1, target}};
+    }
+  };
+}
+
+#else
+// Or alternatively:
+Parser<char> char_(char target) {
+  return satisfy([target](char val) { return val == target; }, std::string{target}.c_str());
+}
+#endif
+
 /// Parse any decimal digit
 Parser<char> digit() {
   return satisfy(isdigit, "digit");
 }
 
 /// Parse exactly the string `target`.
-/// Note that this implementation is inefficient.
+/// Note that this implementation allows for backtracking and is inefficient.
 /// A more efficient implementation is left as an exercise for the reader ;-)
 Parser<std::string> string_(std::string const &target) {
   return [=](std::istream &input) -> Result<std::string> {
