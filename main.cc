@@ -777,7 +777,7 @@ Parser<A> between(Parser<B> const &lhs, Parser<C> const &rhs, Parser<A> const &m
 
 template <typename A>
 Parser<A> parenthesized(Parser<A> const &inner) {
-  return between(lex(char_('(')), lex(char_(')')), lazy(inner));
+  return between(lex(char_('(')), lex(char_(')')), inner);
 }
 
 template <typename A>
@@ -799,7 +799,7 @@ Parser<double> expression() {
 }
 
 Parser<double> term() {
-  return lex(double_) | parenthesized(expression);
+  return lex(double_) | parenthesized(lazy(expression()));
 }
 
 Parser<char> newline() {
