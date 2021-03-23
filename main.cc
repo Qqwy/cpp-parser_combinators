@@ -250,12 +250,14 @@ Parser<std::string> string_(std::string const &target) {
 ///
 /// (Note: The templated arguments allow C++ to do more automatic type-inference
 /// than if we'd use `std::function` instead.)
-template<typename F, typename A> auto transform(Parser<A> const &parser, F const &fun) -> Parser<decltype(fun(std::declval<A>()))> {
-  return [=](std::istream &input) -> Result<decltype(fun(std::declval<A>()))> {
+template<typename F, typename A> auto transform(Parser<A> const &parser, F const &fun) {
+  auto wrapper = [=](A const &val) { return fun(val); };
+
+  return [=](std::istream &input) -> Result<std::invoke_result_t<decltype(wrapper), A const &>> {
     Result<A> res = parser(input);
     if(!bool(res)) { return std::get<ErrorMessage>(res); }
 
-    return fun(std::get<A>(res));
+    return wrapper(std::get<A>(res));
   };
 }
 
@@ -327,20 +329,6 @@ Parser<A> operator +(Parser<A> const &lhs, Parser<A> const &rhs) {
   return transformApply(lhs >> rhs, std::plus());
 }
 
-/// Helper function for `many`/`many1`.
-/// Given a T `first` and a C<T> `rest`, creates a new C<T> with `first` at the front.
-/// Note: This implementation is simple but inefficient.
-/// Optimizing it is left a an exercise to the reader ;-)
-template<typename Container>
-Container prependElement(typename Container::value_type const &first, Container const &rest) {
-  Container result{};
-  result.push_back(first);
-  for(auto const &elem : rest) {
-    result.push_back(elem);
-  }
-  return result;
-}
-
 /// Note: `many` and `many1` are mutually recursive.
 
 /// Note that `lazy` needs to be defined as a macro,
@@ -369,9 +357,7 @@ Parser<Container> many(Parser<typename Container::value_type> element_parser) {
 
 template<typename Container>
 Parser<Container> many1(Parser<typename Container::value_type> element_parser) {
-  auto res = element_parser >> many<Container>(element_parser);
-
-  return transformApply(res, prependElement<Container>);
+  return element_parser >> many<Container>(element_parser);
 }
 
 #else
@@ -476,14 +462,15 @@ Parser<std::string> maybe_sign() {
 Parser<std::string> signed_digits = maybe_sign() >> digits;
 Parser<long int> int_ = transform(signed_digits, [](std::string const &str) { return std::stol(str.c_str()); });
 
+double strtodouble(std::string const &str) { return std::stod(str); }
+
 Parser<double> double_() {
   Parser<std::string> vals =
     digits
     >> maybe<std::string>(char_('.') >> digits)
     >> maybe<std::string>(char_('e') >> signed_digits);
-  return transform(vals, [](std::string const &val) {
-    return std::atof(val.c_str());
-  });
+
+  return transform(vals, strtodouble);
 }
 
 template<typename A>
