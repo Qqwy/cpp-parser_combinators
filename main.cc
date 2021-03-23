@@ -477,9 +477,10 @@ Parser<std::string> signed_digits = maybe_sign() >> digits;
 Parser<long int> int_ = transform(signed_digits, [](std::string const &str) { return std::stol(str.c_str()); });
 
 Parser<double> double_() {
-  Parser<std::string> vals = digits >> maybe(string_(".") >> digits) >> maybe(string_("e") >> signed_digits);
-  // auto vals = signed_digits + maybe(string_(".") + digits) +
-  //             maybe(string_("e") + signed_digits);
+  Parser<std::string> vals =
+    digits
+    >> maybe<std::string>(char_('.') >> digits)
+    >> maybe<std::string>(char_('e') >> signed_digits);
   return transform(vals, [](std::string const &val) {
     return std::atof(val.c_str());
   });
