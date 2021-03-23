@@ -27,6 +27,64 @@ constexpr C constructFromTuple(std::tuple<Ts...> const &tuple)
   return std::apply([](auto... elements){ return C{elements...}; }, tuple);
 }
 
+
+template <typename... Ts>
+std::string sumAll(Ts... elements) {
+  return (std::string{} + ... + elements);
+}
+
+template <typename... Ts>
+std::string constructFromTuple(std::tuple<std::string, Ts...> const &tuple) {
+  return std::apply([](auto... elements) { return sumAll(elements...); }, tuple);
+}
+
+template<typename T, typename C>
+C convert(T const &val) {
+  return constructFromTuple<C>(val);
+}
+
+template<> std::string convert(std::vector<char> const &val) {
+  std::string res;
+  std::copy(std::begin(val), std::end(val), std::back_inserter(res));
+  return res;
+}
+
+template <> std::vector<char> convert(std::string const &val) {
+  std::vector<char> res;
+  std::copy(std::begin(val), std::end(val), std::back_inserter(res));
+  return res;
+}
+
+template <> std::string convert(char const &val) {
+  return {val};
+}
+
+template<> std::string convert(std::tuple<char, std::string> const &val) {
+    char first;
+    std::string rest;
+    std::tie(first, rest) = val;
+    return std::string{first} + rest;
+}
+
+template<> std::string convert(std::tuple<std::string, char> const &val) {
+    std::string first;
+    char rest;
+    std::tie(first, rest) = val;
+    return first + std::string{rest};
+}
+
+template<> std::string convert(std::tuple<char, char> const &val) {
+    char first;
+    char rest;
+    std::tie(first, rest) = val;
+    return std::string{first} + std::string{rest};
+}
+
+
+template <typename T> std::vector<T> convert(T const &val) { return {val}; }
+
+
+
 /// The result of parsing.
 /// If parsing was successful, will contain `T`.
 /// If there was a problem, will contain `ErrorMessage`.
@@ -47,10 +105,9 @@ struct Result : public std::variant<T, ErrorMessage> {
   /// into a container (like a `std::vector` or a `std::string`)
   /// or any other type
   /// which can be constructed from the tuple's elements
-  template<typename C>
-  constexpr operator Result<C> () const {
-    if(bool(*this)) {
-      return constructFromTuple<C>(std::get<T>(*this));
+  template <typename C> operator Result<C>() const {
+    if (bool(*this)) {
+      return convert<T, C>(std::get<T>(*this));
     } else {
       return std::get<ErrorMessage>(*this);
     }
@@ -119,12 +176,7 @@ constexpr Parser<DefaultConstructible> constant() {
 /// (which will disappear when this parser is used in sequence with other parsers)
 template<typename T>
 Parser<std::tuple<>> ignore(Parser<T> const &parser) {
-  return [=](std::istream &input) -> Result<std::tuple<>> {
-    auto res = parser(input);
-    if(!bool(res)){ return std::get<ErrorMessage>(res); }
-
-    return std::make_tuple();
-  };
+  return transform(parser, [](T const &) { return std::make_tuple(); });
 }
 
 /// Syntactic sugar to be able to call ignore also without parentheses for parameter-less parsers. :-)
@@ -198,7 +250,7 @@ Parser<std::string> string_(std::string const &target) {
 ///
 /// (Note: The templated arguments allow C++ to do more automatic type-inference
 /// than if we'd use `std::function` instead.)
-template<typename F, typename A> auto map(Parser<A> const &parser, F const &fun) -> Parser<decltype(fun(std::declval<A>()))> {
+template<typename F, typename A> auto transform(Parser<A> const &parser, F const &fun) -> Parser<decltype(fun(std::declval<A>()))> {
   return [=](std::istream &input) -> Result<decltype(fun(std::declval<A>()))> {
     Result<A> res = parser(input);
     if(!bool(res)) { return std::get<ErrorMessage>(res); }
@@ -207,7 +259,7 @@ template<typename F, typename A> auto map(Parser<A> const &parser, F const &fun)
   };
 }
 
-template<typename F, typename A> auto mapError(Parser<A> const &parser, F &&fun) -> Parser<A> {
+template<typename F, typename A> auto transformError(Parser<A> const &parser, F &&fun) -> Parser<A> {
   return [=](std::istream &input) -> Result<A> {
     Result<A> res = parser(input);
     if (!bool(res)) {
@@ -219,7 +271,7 @@ template<typename F, typename A> auto mapError(Parser<A> const &parser, F &&fun)
 }
 
 Parser<std::tuple<>> eof() {
-  return mapError(ignore(char_(std::char_traits<char>::eof())),
+  return transformError(ignore(char_(std::char_traits<char>::eof())),
                   [](auto &&) { return "<end of input>"; });
 }
 
@@ -229,8 +281,8 @@ Parser<std::tuple<>> eof() {
 ///
 /// (Note: The templated arguments allow C++ to do more automatic type-inference
 /// than if we'd use `std::function` instead.)
-template<typename F, typename Tuple> auto mapApply(Parser<Tuple> const &parser, F &&fun) {
-  return map(parser, [=](auto &&res) {
+template<typename F, typename Tuple> auto transformApply(Parser<Tuple> const &parser, F const &fun) {
+  return transform(parser, [=](auto &&res) {
     return std::apply(fun, res);
   });
 }
@@ -272,7 +324,7 @@ Parser<A> operator |(Parser<A> const &lhs, Parser<A> const &rhs) {
 
 template<typename A>
 Parser<A> operator +(Parser<A> const &lhs, Parser<A> const &rhs) {
-  return mapApply(lhs >> rhs, std::plus());
+  return transformApply(lhs >> rhs, std::plus());
 }
 
 /// Helper function for `many`/`many1`.
@@ -307,6 +359,7 @@ Parser<Container> many(Parser<typename Container::value_type> element_parser);
 template<typename Container>
 Parser<Container> many1(Parser<typename Container::value_type> element_parser);
 
+#if false
 template<typename Container>
 Parser<Container> many(Parser<typename Container::value_type> element_parser) {
   // Wrapping is necessary to make this 'lazy'.
@@ -318,8 +371,39 @@ template<typename Container>
 Parser<Container> many1(Parser<typename Container::value_type> element_parser) {
   auto res = element_parser >> many<Container>(element_parser);
 
-  return mapApply(res, prependElement<Container>);
+  return transformApply(res, prependElement<Container>);
 }
+
+#else
+template <typename Container>
+Parser<Container> many(Parser<typename Container::value_type> element_parser) {
+  return many1<Container>(element_parser) | constant(Container{});
+}
+
+template <typename Container>
+Parser<Container> many1(Parser<typename Container::value_type> element_parser) {
+  using T = typename Container::value_type;
+  return [=](std::istream &input) -> Result<Container> {
+    auto first = element_parser(input);
+    if (!bool(first)) {
+      return std::get<ErrorMessage>(first);
+    }
+
+    Container container;
+    container.push_back(std::get<T>(first));
+
+    while (true) {
+      auto next = element_parser(input);
+      if (!bool(next)) {
+        return container;
+      }
+
+      container.push_back(std::get<T>(next));
+    }
+  };
+}
+
+#endif
 
 Parser<char> space() {
   return satisfy(isspace, "space");
@@ -371,7 +455,7 @@ Parser<Person> parser3 = lex(string_("john")) >> lex(string_("snow"));
 
 Parser<std::string> parser4 = many1<std::string>(char_('z'));
 
-Parser<std::string> parser5 = mapApply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
+Parser<std::string> parser5 = transformApply(char_('x') >> string_("asdf"), [](auto lhs, auto rhs) {
   return lhs + rhs;
  });
 
@@ -381,17 +465,22 @@ Parser<T> maybe(Parser<T> elem) {
 }
 
 Parser<std::string> digits = many1<std::string>(digit);
-Parser<size_t> uint_ = map(digits, [](std::string const &str){ return std::stoul(str.c_str()); });
+Parser<size_t> uint_ = transform(digits, [](std::string const &str){ return std::stoul(str.c_str()); });
 
-Parser<std::string> maybe_sign = string_("+") | string_("-") | string_("");
-Parser<std::string> signed_digits = maybe_sign + digits;
-Parser<long int> int_ = map(signed_digits, [](std::string const &str){ return std::stol(str.c_str()); });
+// Parser<std::string> maybe_sign = string_("+") | string_("-") | string_("");
+
+Parser<std::string> maybe_sign() {
+  return maybe(char_('+') | char_('-'));
+}
+
+Parser<std::string> signed_digits = maybe_sign() >> digits;
+Parser<long int> int_ = transform(signed_digits, [](std::string const &str) { return std::stol(str.c_str()); });
 
 Parser<double> double_() {
-  auto vals = digits + maybe(string_(".") + digits) + maybe(string_("e") + signed_digits);
+  Parser<std::string> vals = digits >> maybe(string_(".") >> digits) >> maybe(string_("e") >> signed_digits);
   // auto vals = signed_digits + maybe(string_(".") + digits) +
   //             maybe(string_("e") + signed_digits);
-  return map(vals, [](std::string const &val) {
+  return transform(vals, [](std::string const &val) {
     return std::atof(val.c_str());
   });
 }
@@ -419,27 +508,27 @@ Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
 }
 
 template<typename A>
-Parser<A> chainl(Parser<A> elem, Parser<std::function<A(A, A)>> binop, A default_val) {
+Parser<A> chainl(Parser<A> const &elem, Parser<std::function<A(A, A)>> const &binop, A default_val) {
   return chainl1 | constant(default_val);
 }
 
 template<typename A>
-Parser<A> chainl(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+Parser<A> chainl(Parser<A> const &elem, Parser<std::function<A(A, A)>> const &binop) {
   return chainl1 | constant(A{});
 }
 
 template <typename T>
-Parser<T> choice(Parser<T> parser) {
+Parser<T> choice(Parser<T> const &parser) {
   return parser;
 }
 
 template <typename T, typename... Ts>
-Parser<T> choice(Parser<T> first, Ts... rest) {
+Parser<T> choice(Parser<T> const &first, Ts... rest) {
   return first | choice(rest...);
 }
 
 template<typename A>
-Parser<A> chainr1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+Parser<A> chainr1(Parser<A> const &elem, Parser<std::function<A(A, A)>> const &binop) {
   using F = std::function<A(A, A)>;
 
   return [=](std::istream &input) -> Result<A> {
@@ -459,12 +548,12 @@ Parser<A> chainr1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
 }
 
 template<typename A>
-Parser<A> chainr(Parser<A> elem, Parser<std::function<A(A, A)>> binop, A default_val) {
+Parser<A> chainr(Parser<A> const &elem, Parser<std::function<A(A, A)>> const &binop, A const &default_val) {
   return chainr1 | constant(default_val);
 }
 
 template<typename A>
-Parser<A> chainr(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
+Parser<A> chainr(Parser<A> const &elem, Parser<std::function<A(A, A)>> const &binop) {
   return chainr1 | constant(A{});
 }
 
