@@ -252,6 +252,7 @@ Parser<std::string> string_(std::string const &target) {
 /// Runs the function 'fun' on input 'val'
 /// assuming that val_parser and fun_parser (in that order)
 /// are both successful.
+///
 /// I did _not_ cover this during the presentation as it is a rather meta-heavy higher-order function.
 template <typename F, typename A>
 auto ap(Parser<A> const &val_parser, Parser<F> const &fun_parser) {
@@ -274,10 +275,11 @@ auto ap(Parser<A> const &val_parser, Parser<F> const &fun_parser) {
 /// Transform the result of a parser into another type of result
 /// by running a function `fun` on it.
 ///
+/// In many other languages known as `map`, part of the functional concept known as a 'Functor'.
+///
 /// (Note: The templated arguments allow C++ to do more automatic type-inference
 /// than if we'd use `std::function` instead.)
 template<typename F, typename A> auto transform(Parser<A> const &parser, F const &fun) {
-
   return [=](std::istream &input) -> Result<std::invoke_result_t<F, A const &>> {
     Result<A> res = parser(input);
     if(!bool(res)) { return std::get<ErrorMessage>(res); }
@@ -288,6 +290,8 @@ template<typename F, typename A> auto transform(Parser<A> const &parser, F const
 
 #else
 
+/// Alternative (simpler but less intuitive) implementation of transform,
+/// using the fact that all Applicative Functors are by their very nature also 'normal' Functors.
 template <typename F, typename A>
 auto transform(Parser<A> const &parser, F const &fun) {
   // Indirection which is necessary to keep the compiler happy
@@ -295,7 +299,7 @@ auto transform(Parser<A> const &parser, F const &fun) {
   using Res = std::invoke_result_t<F, A const &>;
   std::function<Res(A const &)> wrapped_fun = fun;
 
-  return ap(parser, constant(wrapped_fun));
+  return Parser<Res>{ap(parser, constant(wrapped_fun))};
 }
 
 #endif
@@ -514,6 +518,7 @@ Parser<double> double_() {
   return transform(vals, strtodouble);
 }
 
+#if false
 template<typename A>
 Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
   using F = std::function<A(A, A)>;
@@ -536,26 +541,36 @@ Parser<A> chainl1(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
   };
 }
 
+#else
 template <typename A>
-Parser<A> chainl1bhelper(Parser<A> elem, Parser<std::function<A(A, A)>> binop, A lhs) {
-  return binop >> elem >> lazy(chainl1bhelper(elem, binop, lhs)) | constant(lhs);
+std::function<Parser<A>(A)>> chainl1tail(Parser<A> const &elem_parser, Parser <std::function<A(A, A)>> const &op_parser){
+        // return
+        //   ap(op_parser >> elem_parser,
+        //      [=](auto const &op, auto const &rhs) { return chainl1tail(op(lhs, rhs)); }
+        //   )
+        //   | constant(lhs);
+  return [=](A lhs) {
+    Parser<std::function<A(A)>> recurse = transformApply(
+                                                         op_parser >> elem_parser, [=](auto const &op, auto const &rhs) -> std::function<A(A)> {
+                                                           return chainl1tail<A>(elem_parser, op_parser)(op(lhs, rhs));
+                                                         });
+  return recurse | constant(lhs);
+};
 }
+
 
 template<typename A>
-Parser<A> chainl1b(Parser<A> elem, Parser<std::function<A(A, A)>> binop) {
-  auto rest = [=](A const &lhs) {
-    return chainl1bhelper(elem, binop, lhs);
-  };
-  return ap(elem, rest);
+Parser<A> chainl1(Parser<A> const &elem_parser, Parser<std::function<A(A, A)>> const &op_parser) {
+  // return ap(elem_parser, [=](auto const &lhs) { return chainl1tail(elem_parser, op_parser, lhs); });
+  return ap(elem_parser, chainl1tail(elem_parser, op_parser));
 }
 
-/// chainl1(lhs, op) { return ap(lhs, chainl1tail); }
-/// chainl1tail(lhs) { return ap(op >> rhs, [=](op, rhs){ return chainl1tail(op(lhs, rhs)); })} | constant(lhs);
+#endif
 
-  template <typename A>
-  Parser<A> chainl(Parser<A> const &elem,
-                   Parser<std::function<A(A, A)>> const &binop, A default_val) {
-    return chainl1 | constant(default_val);
+template <typename A>
+Parser<A> chainl(Parser<A> const &elem,
+                 Parser<std::function<A(A, A)>> const &binop, A default_val) {
+  return chainl1 | constant(default_val);
   }
 
   template <typename A>
