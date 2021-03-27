@@ -716,20 +716,20 @@ private:
   };
 };
 
-template <typename A> Parser<A> makeExpressioParser(Parser<A> const &inner) {
+template <typename A> Parser<A> makeExpressionParser(Parser<A> const &inner) {
   return inner;
 }
 
 template <typename A, typename... As>
-Parser<A> makeExpressioParser(Parser<A> const &inner,
+Parser<A> makeExpressionParser(Parser<A> const &inner,
                               Precedence<A> const &next, As... rest) {
   Parser<A> result = next.toParser(inner);
-  return makeExpressioParser(result, rest...);
+  return makeExpressionParser(result, rest...);
 }
 
 template <typename A, typename... As>
-Parser<A> makeExpressioParser(Parser<A>(*inner)(), As... rest) {
-  return makeExpressioParser(inner(), rest...);
+Parser<A> makeExpressionParser(Parser<A>(*inner)(), As... rest) {
+  return makeExpressionParser(inner(), rest...);
 }
 
 template <typename A>
@@ -865,13 +865,13 @@ Parser<A> parenthesized(Parser<A> const &inner) {
 template <typename A>
 Parser<A>
 parenthesized(Parser<A> (*inner)()) {
-  return parenthesized(inner());
+  return parenthesized(lazy(inner()));
 }
 
 Parser<double> term();
 
 Parser<double> expression() {
-  return makeExpressioParser(
+  return makeExpressionParser(
                              term,
                              prefix(neg),
                              binary_right(exp),
@@ -881,7 +881,7 @@ Parser<double> expression() {
 }
 
 Parser<double> term() {
-  return lex(double_) | parenthesized(lazy(expression()));
+  return lex(double_) | parenthesized(expression);
 }
 
 Parser<char> newline() {
