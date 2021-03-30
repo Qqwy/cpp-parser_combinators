@@ -156,14 +156,6 @@ struct Parser : public std::function<Result<T>(std::istream &)> {
   {}
 };
 
-// /// Run any function regardless of current input
-// /// Using this directly is not often useful, except maybe for debugging.
-// template<typename F> auto constexpr action(F fun) {
-//   return [=](std::istream &) {
-//     return fun();
-//   };
-// }
-
 /// Unconditionally construct many1thing, regardless of current input.
 template<typename T>
 constexpr Parser<T> constant(T const &val){
@@ -317,6 +309,7 @@ auto transformError(Parser<A> const &parser, F &&fun)->Parser<A> {
   };
 }
 
+/// Parses exactly the end-of-file character (and discards it)
 Parser<std::tuple<>> eof() {
   return transformError(ignore(char_(std::char_traits<char>::eof())),
                         [](auto &&) { return "<end of input>"; });
@@ -839,15 +832,6 @@ Parser<std::function<double(double)>> neg() {
   return ignore(lex(string_("-"))) >> constant(std::negate());
 }
 
-// template<typename A>
-// Parser<std::function<A(A, A)>> addOp() {
-//   return minus<A>() | plus<A>();
-// }
-
-// Parser<size_t> uint_expression() {
-//   return chainl1(lex(uint_), lex(addOp<size_t>()));
-// };
-
 Parser<double> double_expression() {
   return chainl1(lex(double_), plus() | minus());
 };
@@ -868,6 +852,7 @@ parenthesized(Parser<A> (*inner)()) {
   return parenthesized(lazy(inner()));
 }
 
+/// An example of how to do nested binary expressions:
 Parser<double> term();
 
 Parser<double> expression() {
@@ -896,6 +881,7 @@ Parser<std::tuple<>> comment() {
   return ignore(string_("//") >> many<std::string>(non_newline()) >> whitespace());
 }
 
+/// Run a parser, possibly leave some unconsumed input in the istream.
 template <typename T>
 Result<T> parsePartial(Parser<T> parser, std::istream &in) {
   Result<T> result = parser(in);
@@ -912,6 +898,7 @@ template <typename T> Result<T> parsePartial(Parser<T>(*parser)(), std::istream 
   return parsePartial(parser(), in);
 }
 
+/// Parses a parser until completion (it only succeeds if it consumes all input up to the end-of-file)
 template <typename T>
 Result<T> parse(Parser<T> parser, std::istream &in) {
   return parsePartial<T>(parser >> eof(), in);
@@ -922,12 +909,5 @@ template <typename T> Result<T> parse(Parser<T> (*parser)(), std::istream &in) {
 }
 
 int main() {
-  // runParser(parser2);
-  // runParser(parser3);
-  // runParser(parser4);
-  // runParser(parser5);
-  // runParser(int_);
-  // runParser(double_());
-  // runParser(double_expression());
   parse(expression, std::cin);
 }
