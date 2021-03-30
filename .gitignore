@@ -31,3 +31,7 @@
 *.exe
 *.out
 *.app
+
+main
+simple/main
+optimized/main
